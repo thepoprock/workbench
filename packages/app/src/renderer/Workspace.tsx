@@ -5,10 +5,11 @@ import type { Project } from '@workbench/shared';
 import { hub } from './hub.ts';
 import { HistoryTab, Tab } from './Tab.tsx';
 import { HistoryPane } from './HistoryPane.tsx';
+import { ChangelogPane } from './ChangelogPane.tsx';
 import { TerminalPane } from './TerminalPane.tsx';
 
-const components = { terminal: TerminalPane, history: HistoryPane };
-const tabComponents = { terminal: Tab, history: HistoryTab };
+const components = { terminal: TerminalPane, history: HistoryPane, changelog: ChangelogPane };
+const tabComponents = { terminal: Tab, history: HistoryTab, plain: HistoryTab };
 const SAVE_DEBOUNCE_MS = 400;
 
 function Empty() {

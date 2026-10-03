@@ -153,4 +153,10 @@ export const migrations: string[] = [
   ALTER TABLE ideas ADD COLUMN session_id TEXT;
   ALTER TABLE ideas ADD COLUMN archived INTEGER NOT NULL DEFAULT 0;
   `,
+
+  // 5 — changelog entries are upserted by a stable key (git:<sha>, session:<id>)
+  `
+  ALTER TABLE change_entries ADD COLUMN ref_key TEXT;
+  CREATE UNIQUE INDEX change_entries_key ON change_entries(project_id, ref_key);
+  `,
 ];

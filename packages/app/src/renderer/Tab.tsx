@@ -37,7 +37,7 @@ export function Tab({ api, params }: IDockviewPanelHeaderProps<TerminalParams>) 
   );
 }
 
-// Viewer tabs close without side effects.
+// Tabs for views (history, changelog): closing has no side effects.
 export function HistoryTab({ api }: IDockviewPanelHeaderProps) {
   const [title, setTitle] = useState(api.title ?? '');
   useEffect(() => {
@@ -54,7 +54,7 @@ export function HistoryTab({ api }: IDockviewPanelHeaderProps) {
           e.stopPropagation();
           api.close();
         }}
-        aria-label="Close history"
+        aria-label="Close"
       >
         ×
       </button>

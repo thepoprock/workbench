@@ -156,21 +156,39 @@ export class History {
     // Agent events: prompts, tools, replies, notifications.
     const agentRows = this.db
       .prepare(
-        `SELECT e.ts, e.session_id, e.project_id, s.title, p.name AS project, ${SNIP('events_fts')} AS snip
+        `SELECT e.id, e.ts, e.kind, e.payload, e.session_id, e.project_id, s.title, p.name AS project, ${SNIP('events_fts')} AS snip
          FROM events_fts JOIN events e ON e.id = events_fts.rowid
          LEFT JOIN sessions s ON s.id = e.session_id LEFT JOIN projects p ON p.id = e.project_id
          WHERE events_fts MATCH ? ${projectId ? 'AND e.project_id = ?' : ''}
          ORDER BY e.ts DESC LIMIT ${PER_SOURCE}`,
       )
       .all(...(projectId ? [fts, projectId] : [fts])) as {
+      id: number;
       ts: number;
-      session_id: string;
+      kind: string;
+      payload: string;
+      session_id: string | null;
       project_id: string;
       title: string | null;
       project: string | null;
       snip: string;
     }[];
     for (const r of agentRows) {
+      if (r.kind === 'git.commit') {
+        const sha = String((JSON.parse(r.payload) as { sha?: string }).sha ?? '');
+        add(`g:${r.id}`, {
+          source: 'commit',
+          projectId: r.project_id,
+          sessionId: null,
+          transcriptId: null,
+          seq: null,
+          ts: r.ts,
+          title: `Commit ${sha.slice(0, 7)}`,
+          where: r.project ?? '',
+          snippet: r.snip,
+        });
+        continue;
+      }
       add(`s:${r.session_id}`, {
         source: 'agent',
         projectId: r.project_id,

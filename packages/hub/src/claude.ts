@@ -61,6 +61,8 @@ export class ClaudeHarness {
   private hookTokens = new Map<string, Buffer>(); // workbench session id → token
   private historyCache = new Map<string, { key: string; t: ClaudeTranscript | null }>();
 
+  onTurn: (sessionId: string) => void = () => {}; // a turn finished (Stop hook)
+
   constructor(
     private terms: Terminals,
     private hubPort: () => number,
@@ -179,6 +181,7 @@ export class ClaudeHarness {
     });
     this.terms.recordEvent(sessionId, `agent.${event}`, trimPayload(h), text || undefined);
     if (event === 'SessionEnd') this.hookTokens.delete(sessionId);
+    if (event === 'Stop') this.onTurn(sessionId);
     return 204;
   }
 

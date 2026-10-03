@@ -69,6 +69,7 @@ export interface Pushes {
   'term.data': { sessionId: string; data: string }; // only to attached clients
   'term.update': TermSession; // to everyone: status/title changes
   'idea.update': Idea; // metadata or a file in its folder changed
+  'changelog.update': { projectId: string }; // entries added or changed
 }
 
 // A past Claude Code conversation, read from ~/.claude/projects/<cwd>/<id>.jsonl.
@@ -96,7 +97,20 @@ export interface Idea {
   updatedAt: number;
 }
 
-export type HitSource = 'agent' | 'terminal' | 'transcript';
+export type ChangeSource = 'git' | 'session' | 'manual';
+
+export interface ChangeEntry {
+  id: string;
+  projectId: string;
+  ts: number;
+  source: ChangeSource;
+  summary: string;
+  // git: sha, author, branch, files, insertions, deletions
+  // session: sessionId, externalId, prompts, files[], commands, final, running
+  refs: Record<string, unknown>;
+}
+
+export type HitSource = 'agent' | 'terminal' | 'transcript' | 'commit';
 
 export interface SearchHit {
   source: HitSource;
@@ -155,6 +169,12 @@ export interface Methods {
   'idea.agent': { params: { id: string; cols: number; rows: number }; result: TermSession };
   // Copies the idea's files into rootPath (never overwriting) and creates a project there.
   'idea.promote': { params: { id: string; rootPath: string; name?: string }; result: { project: Project; skipped: string[] } };
+
+  // Changelog per project: git commits, agent session summaries, manual notes.
+  'changelog.list': { params: { projectId: string; before?: number; limit?: number }; result: ChangeEntry[] };
+  'changelog.note': { params: { projectId: string; text: string }; result: ChangeEntry };
+  'changelog.delete': { params: { id: string }; result: null }; // manual notes only
+  'changelog.commit': { params: { projectId: string; sha: string }; result: string }; // git show --stat
 
   // History. Search spans agent events, terminal output and Claude transcripts.
   'history.search': { params: { query: string; projectId?: string; limit?: number }; result: SearchHit[] };

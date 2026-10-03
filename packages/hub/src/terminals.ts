@@ -82,6 +82,7 @@ function shellEnv(): Record<string, string> {
 
 export class Terminals {
   private live = new Map<string, Live>();
+  onEnded: (session: TermSession) => void = () => {};
 
   constructor(
     private db: DB,
@@ -390,6 +391,7 @@ export class Terminals {
       .run(exitCode, s.info.endedAt, s.info.id);
     this.event(s.info, 'session.end', { exitCode });
     this.broadcast(s.info);
+    this.onEnded(s.info);
   }
 
   private event(info: TermSession, kind: string, payload: object, text?: string): void {

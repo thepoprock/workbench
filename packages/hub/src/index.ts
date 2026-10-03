@@ -10,6 +10,7 @@ import { Terminals } from './terminals.ts';
 import { ClaudeHarness, HARNESS_ID } from './claude.ts';
 import { History } from './history.ts';
 import { Ideas } from './ideas.ts';
+import { Changelog } from './changelog.ts';
 
 const VERSION = '0.0.1';
 
@@ -61,7 +62,20 @@ async function main(): Promise<void> {
   const claude = new ClaudeHarness(terms, () => server?.port ?? 0);
   const history = new History(db);
   const ideas = new Ideas(db, terms, claude, (idea) => server?.broadcast({ event: 'idea.update', data: idea }));
-  const dispatch = makeDispatch(db, terms, claude, history, ideas, {
+  const changelog = new Changelog(db, (projectId) =>
+    server?.broadcast({ event: 'changelog.update', data: { projectId } }),
+  );
+  claude.onTurn = (id) => changelog.session(id);
+  terms.onEnded = (s) => {
+    if (s.kind === 'agent') changelog.session(s.id);
+  };
+  // Entries still marked running belong to sessions the last hub run lost.
+  for (const r of db
+    .prepare("SELECT ref_key FROM change_entries WHERE source = 'session' AND json_extract(refs, '$.running') = 1")
+    .all() as { ref_key: string }[]) {
+    changelog.session(r.ref_key.slice('session:'.length));
+  }
+  const dispatch = makeDispatch(db, terms, claude, history, ideas, changelog, {
     version: VERSION,
     pid: process.pid,
     startedAt,

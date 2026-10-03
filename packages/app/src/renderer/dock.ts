@@ -27,3 +27,9 @@ export function openHistory(api: DockviewApi, params: HistoryParams): void {
   }
   api.addPanel({ id, component: 'history', tabComponent: 'history', title: 'History', params });
 }
+
+export function openChangelog(api: DockviewApi, projectId: string): void {
+  const existing = api.getPanel('changelog');
+  if (existing) return existing.api.setActive();
+  api.addPanel({ id: 'changelog', component: 'changelog', tabComponent: 'plain', title: 'Changelog', params: { projectId } });
+}

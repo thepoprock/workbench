@@ -8,7 +8,7 @@ import { Agents } from './Agents.tsx';
 import { putSessions, statusClass, useProjectSessions } from './sessions.ts';
 import { hub } from './hub.ts';
 import { Projects } from './Projects.tsx';
-import { openHistory, openTerminal } from './dock.ts';
+import { openChangelog, openHistory, openTerminal } from './dock.ts';
 import { Search } from './Search.tsx';
 import { Workspace } from './Workspace.tsx';
 
@@ -145,7 +145,9 @@ export function App() {
       }
       const run = async (d: DockviewApi) => {
         try {
-          if (h.source === 'transcript') {
+          if (h.source === 'commit') {
+            openChangelog(d, h.projectId!);
+          } else if (h.source === 'transcript') {
             const s = await hub.call('agent.start', { projectId: h.projectId!, resume: h.transcriptId!, cols: 100, rows: 30 });
             putSessions([s]);
             openTerminal(d, s.id, s.title);
@@ -175,6 +177,11 @@ export function App() {
         setSearching(true);
         return;
       }
+      if (e.shiftKey && k === 'l') {
+        e.preventDefault();
+        if (dock && current) openChangelog(dock, current.id);
+        return;
+      }
       if (!e.shiftKey && k === 't') {
         e.preventDefault();
         void newTerminal();
@@ -185,7 +192,7 @@ export function App() {
     };
     window.addEventListener('keydown', onKey, true);
     return () => window.removeEventListener('keydown', onKey, true);
-  }, [newTerminal, startAgent]);
+  }, [newTerminal, startAgent, dock, current]);
 
   const promote = async (idea: Idea) => {
     const dir = await window.workbench.pickFolder();
@@ -305,6 +312,11 @@ export function App() {
         <div className="titlebar drag">
           <span className="titlebar-name">{currentIdea ? 'Idea' : (current?.name ?? 'Workbench')}</span>
           {current?.rootPath && <span className="muted titlebar-path">— {current.rootPath}</span>}
+          {current && (
+            <button className="search-button" onClick={() => dock && openChangelog(dock, current.id)} disabled={!dock}>
+              Changelog <kbd>⌘⇧L</kbd>
+            </button>
+          )}
           <button className="search-button" onClick={() => setSearching(true)} disabled={status !== 'connected'}>
             Search history <kbd>⌘⇧F</kbd>
           </button>

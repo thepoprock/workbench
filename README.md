@@ -31,6 +31,9 @@ live in `~/Library/Application Support/Workbench/`.
   as tabs live and the stage advances. Claude asks to trust each new idea
   folder once. **Promote to project…** copies the docs (never overwriting)
   into a folder you pick and creates the project.
+- Changelog: ⌘⇧L (or **Changelog** in the title bar) per project — git commits
+  (polled every 20 s), one entry per Claude session (prompt, files edited,
+  commands, Claude's final reply; updated after each turn) and your notes.
 - History viewer: **Earlier output** (hover a pane) pages through a session's
   full saved output; search hits open it at the matching part.
 - Throwaway data dir: `WORKBENCH_DATA_DIR=/some/tmp npm run dev`

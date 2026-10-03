@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import type { Project, SearchHit } from '@workbench/shared';
 import { hub } from './hub.ts';
 
-const SOURCE_LABEL = { agent: 'Agent', terminal: 'Terminal', transcript: 'Claude' } as const;
+const SOURCE_LABEL = { agent: 'Agent', terminal: 'Terminal', transcript: 'Claude', commit: 'Commit' } as const;
 
 const ago = (t: number | null) => {
   if (!t) return '';
@@ -122,7 +122,7 @@ export function Search({ project, onOpen, onClose }: Props) {
         </div>
         <ul className={`hits ${fresh ? '' : 'stale'}`} ref={list}>
           {hits.map((h, i) => (
-            <li key={`${h.source}:${h.sessionId ?? h.transcriptId}`}>
+            <li key={`${h.source}:${h.sessionId ?? h.transcriptId}:${h.ts}`}>
               <button className={i === active ? 'active' : ''} onMouseEnter={() => setActive(i)} onClick={() => choose(h)}>
                 <span className="hit-top">
                   <span className={`badge ${h.source}`}>{SOURCE_LABEL[h.source]}</span>
