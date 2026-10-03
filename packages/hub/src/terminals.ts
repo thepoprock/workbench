@@ -44,6 +44,7 @@ interface SessionRow {
 
 interface Live {
   info: TermSession;
+  killed: boolean; // ended via kill() (a closed tab), not on its own
   proc: pty.IPty | null; // null once exited
   screen: headless.Terminal;
   serializer: serialize.SerializeAddon;
@@ -82,7 +83,8 @@ function shellEnv(): Record<string, string> {
 
 export class Terminals {
   private live = new Map<string, Live>();
-  onEnded: (session: TermSession) => void = () => {};
+  onEnded: (session: TermSession, killedByUser: boolean) => void = () => {};
+  onOutput: (session: TermSession, data: string) => void = () => {};
 
   constructor(
     private db: DB,
@@ -210,6 +212,7 @@ export class Terminals {
 
     const s: Live = {
       info,
+      killed: false,
       proc,
       screen,
       serializer,
@@ -337,7 +340,10 @@ export class Terminals {
   }
 
   kill(sessionId: string): void {
-    this.live.get(sessionId)?.proc?.kill();
+    const s = this.live.get(sessionId);
+    if (!s?.proc) return;
+    s.killed = true;
+    s.proc.kill();
   }
 
   shutdown(): void {
@@ -346,6 +352,7 @@ export class Terminals {
 
   private output(s: Live, data: string): void {
     s.screen.write(data);
+    this.onOutput(s.info, data);
     const bytes = Buffer.from(data);
     writeSync(s.logFd, bytes);
     s.logBytes += bytes.length;
@@ -391,7 +398,7 @@ export class Terminals {
       .run(exitCode, s.info.endedAt, s.info.id);
     this.event(s.info, 'session.end', { exitCode });
     this.broadcast(s.info);
-    this.onEnded(s.info);
+    this.onEnded(s.info, s.killed);
   }
 
   private event(info: TermSession, kind: string, payload: object, text?: string): void {

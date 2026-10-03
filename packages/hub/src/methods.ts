@@ -8,6 +8,7 @@ import type { ClaudeHarness } from './claude.ts';
 import type { History } from './history.ts';
 import type { Ideas } from './ideas.ts';
 import type { Changelog } from './changelog.ts';
+import type { Errors } from './errors.ts';
 import type { Terminals } from './terminals.ts';
 
 type Handler<M extends Method> = (params: Methods[M]['params'], client: Client) => unknown;
@@ -40,6 +41,7 @@ export function makeDispatch(
   history: History,
   ideas: Ideas,
   changelog: Changelog,
+  errors: Errors,
   info: Omit<HubInfo, 'schemaVersion' | 'protocol'>,
 ): Dispatch {
   const getProject = (id: string): ProjectRow => {
@@ -145,6 +147,14 @@ export function makeDispatch(
     'changelog.note': ({ projectId, text }) => changelog.note(projectId, text),
     'changelog.delete': ({ id }) => changelog.deleteNote(id),
     'changelog.commit': ({ projectId, sha }) => changelog.commit(projectId, sha),
+
+    'errors.list': ({ projectId, status }) => errors.list(projectId, status),
+    'errors.occurrences': ({ id, limit }) => errors.occurrences(id, limit),
+    'errors.setStatus': ({ id, status }) => errors.setStatus(id, status),
+    'errors.counts': () => errors.counts(),
+    'rules.list': ({ projectId }) => errors.rules(projectId),
+    'rules.save': ({ rule }) => errors.saveRule(rule),
+    'rules.delete': ({ id }) => errors.deleteRule(id),
 
     'history.search': ({ query, projectId, limit }) => history.search(query, projectId, limit),
     'scrollback.chunks': ({ sessionId }) => ({ session: terms.info(sessionId), chunks: terms.chunks(sessionId) }),

@@ -33,3 +33,12 @@ export function openChangelog(api: DockviewApi, projectId: string): void {
   if (existing) return existing.api.setActive();
   api.addPanel({ id: 'changelog', component: 'changelog', tabComponent: 'plain', title: 'Changelog', params: { projectId } });
 }
+
+export function openErrors(api: DockviewApi, projectId: string, errorId?: string): void {
+  const existing = api.getPanel('errors');
+  if (existing) {
+    existing.api.updateParameters({ projectId, errorId });
+    return existing.api.setActive();
+  }
+  api.addPanel({ id: 'errors', component: 'errors', tabComponent: 'plain', title: 'Errors', params: { projectId, errorId } });
+}

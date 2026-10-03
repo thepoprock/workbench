@@ -159,4 +159,29 @@ export const migrations: string[] = [
   ALTER TABLE change_entries ADD COLUMN ref_key TEXT;
   CREATE UNIQUE INDEX change_entries_key ON change_entries(project_id, ref_key);
   `,
+
+  // 6 — error detection rules (project_id NULL = all projects)
+  `
+  CREATE TABLE error_rules (
+    id          TEXT PRIMARY KEY,
+    project_id  TEXT REFERENCES projects(id),
+    kind        TEXT NOT NULL CHECK (kind IN ('output','logfile')),
+    label       TEXT NOT NULL,
+    pattern     TEXT NOT NULL,
+    path        TEXT,
+    enabled     INTEGER NOT NULL DEFAULT 1,
+    notify      INTEGER NOT NULL DEFAULT 1,
+    created_at  INTEGER NOT NULL
+  );
+  ALTER TABLE errors ADD COLUMN notified_at INTEGER;
+  ALTER TABLE errors ADD COLUMN notify INTEGER NOT NULL DEFAULT 1;
+  `,
+
+  // 7 — keep events_fts in step when an event's text is updated (error stack capture)
+  `
+  CREATE TRIGGER events_au AFTER UPDATE OF text ON events BEGIN
+    INSERT INTO events_fts(events_fts, rowid, text) SELECT 'delete', old.id, old.text WHERE old.text IS NOT NULL;
+    INSERT INTO events_fts(rowid, text) SELECT new.id, new.text WHERE new.text IS NOT NULL;
+  END;
+  `,
 ];

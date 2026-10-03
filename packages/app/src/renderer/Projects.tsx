@@ -3,6 +3,7 @@ import type { Project } from '@workbench/shared';
 import { hub } from './hub.ts';
 
 interface Props {
+  errorCounts: Record<string, number>; // open errors per project
   projects: Project[]; // active and archived
   selected: string | null;
   onSelect: (id: string | null) => void;
@@ -10,7 +11,7 @@ interface Props {
   onError: (msg: string) => void;
 }
 
-export function Projects({ projects, selected, onSelect, onChanged, onError }: Props) {
+export function Projects({ errorCounts, projects, selected, onSelect, onChanged, onError }: Props) {
   const [editing, setEditing] = useState<string | null>(null);
   const [draft, setDraft] = useState('');
   const [showArchived, setShowArchived] = useState(false);
@@ -98,7 +99,8 @@ export function Projects({ projects, selected, onSelect, onChanged, onError }: P
           }}
           title={p.rootPath ?? 'No folder — right-click to set one'}
         >
-          {p.name}
+          <span className="idea-name">{p.name}</span>
+          {!p.archived && errorCounts[p.id] ? <span className="err-count">{errorCounts[p.id]}</span> : null}
         </button>
       )}
     </li>

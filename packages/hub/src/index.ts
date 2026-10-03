@@ -11,6 +11,7 @@ import { ClaudeHarness, HARNESS_ID } from './claude.ts';
 import { History } from './history.ts';
 import { Ideas } from './ideas.ts';
 import { Changelog } from './changelog.ts';
+import { Errors } from './errors.ts';
 
 const VERSION = '0.0.1';
 
@@ -65,9 +66,16 @@ async function main(): Promise<void> {
   const changelog = new Changelog(db, (projectId) =>
     server?.broadcast({ event: 'changelog.update', data: { projectId } }),
   );
+  const errors = new Errors(db, (error, alert) => server?.broadcast({ event: 'errors.update', data: { error, alert } }));
   claude.onTurn = (id) => changelog.session(id);
-  terms.onEnded = (s) => {
-    if (s.kind === 'agent') changelog.session(s.id);
+  claude.onToolFailure = (s, hook) => errors.agentToolFailure(s.projectId, s.id, hook);
+  changelog.onCommit = (projectId, sha, subject) => errors.commit(projectId, sha, subject);
+  terms.onOutput = (s, data) => errors.feed(`term:${s.id}`, s.projectId, s.id, data);
+  terms.onEnded = (s, killedByUser) => {
+    errors.endStream(`term:${s.id}`);
+    if (s.kind !== 'agent') return;
+    changelog.session(s.id);
+    if (!killedByUser && s.exitCode) errors.agentExit(s.projectId, s.id, s.exitCode);
   };
   // Entries still marked running belong to sessions the last hub run lost.
   for (const r of db
@@ -75,7 +83,7 @@ async function main(): Promise<void> {
     .all() as { ref_key: string }[]) {
     changelog.session(r.ref_key.slice('session:'.length));
   }
-  const dispatch = makeDispatch(db, terms, claude, history, ideas, changelog, {
+  const dispatch = makeDispatch(db, terms, claude, history, ideas, changelog, errors, {
     version: VERSION,
     pid: process.pid,
     startedAt,
@@ -105,6 +113,7 @@ async function main(): Promise<void> {
     log(`${signal}: shutting down`);
     terms.shutdown();
     ideas.shutdown();
+    errors.shutdown();
     await server?.close();
     db.close();
     try {

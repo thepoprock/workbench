@@ -70,6 +70,8 @@ export interface Pushes {
   'term.update': TermSession; // to everyone: status/title changes
   'idea.update': Idea; // metadata or a file in its folder changed
   'changelog.update': { projectId: string }; // entries added or changed
+  // An error was recorded or changed. alert = show a notification for it.
+  'errors.update': { error: ErrorGroup; alert: boolean };
 }
 
 // A past Claude Code conversation, read from ~/.claude/projects/<cwd>/<id>.jsonl.
@@ -110,7 +112,40 @@ export interface ChangeEntry {
   refs: Record<string, unknown>;
 }
 
-export type HitSource = 'agent' | 'terminal' | 'transcript' | 'commit';
+export type ErrorSource = 'terminal' | 'logfile' | 'agent-tool' | 'agent-exit';
+export type ErrorStatus = 'open' | 'resolved' | 'ignored';
+
+export interface ErrorGroup {
+  id: string;
+  shortId: string; // "err-ab12cd" — put "fixes err-ab12cd" in a commit to resolve
+  projectId: string;
+  title: string;
+  source: ErrorSource;
+  status: ErrorStatus;
+  count: number;
+  firstSeen: number;
+  lastSeen: number;
+  fixCommit: string | null;
+}
+
+export interface ErrorOccurrence {
+  ts: number;
+  text: string; // matched line plus surrounding output
+  sessionId: string | null;
+}
+
+export interface ErrorRule {
+  id: string;
+  projectId: string | null; // null = every project
+  kind: 'output' | 'logfile';
+  label: string;
+  pattern: string; // JavaScript regex source
+  path: string | null; // log file to tail (kind = logfile)
+  enabled: boolean; // record matches
+  notify: boolean; // alert on new / regressed errors
+}
+
+export type HitSource = 'agent' | 'terminal' | 'transcript' | 'commit' | 'error';
 
 export interface SearchHit {
   source: HitSource;
@@ -175,6 +210,15 @@ export interface Methods {
   'changelog.note': { params: { projectId: string; text: string }; result: ChangeEntry };
   'changelog.delete': { params: { id: string }; result: null }; // manual notes only
   'changelog.commit': { params: { projectId: string; sha: string }; result: string }; // git show --stat
+
+  // Errors: grouped occurrences from terminals, log files and agents.
+  'errors.list': { params: { projectId: string; status?: ErrorStatus }; result: ErrorGroup[] };
+  'errors.occurrences': { params: { id: string; limit?: number }; result: ErrorOccurrence[] };
+  'errors.setStatus': { params: { id: string; status: ErrorStatus }; result: ErrorGroup };
+  'errors.counts': { params: Empty; result: Record<string, number> }; // open errors per project
+  'rules.list': { params: { projectId: string }; result: ErrorRule[] }; // global + this project's
+  'rules.save': { params: { rule: Omit<ErrorRule, 'id'> & { id?: string } }; result: ErrorRule };
+  'rules.delete': { params: { id: string }; result: null };
 
   // History. Search spans agent events, terminal output and Claude transcripts.
   'history.search': { params: { query: string; projectId?: string; limit?: number }; result: SearchHit[] };

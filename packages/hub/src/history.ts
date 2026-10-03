@@ -174,6 +174,20 @@ export class History {
       snip: string;
     }[];
     for (const r of agentRows) {
+      if (r.kind === 'error') {
+        add(`e:${(JSON.parse(r.payload) as { errorId?: string }).errorId ?? r.id}`, {
+          source: 'error',
+          projectId: r.project_id,
+          sessionId: r.session_id,
+          transcriptId: null,
+          seq: null,
+          ts: r.ts,
+          title: 'Error',
+          where: r.project ?? '',
+          snippet: r.snip,
+        });
+        continue;
+      }
       if (r.kind === 'git.commit') {
         const sha = String((JSON.parse(r.payload) as { sha?: string }).sha ?? '');
         add(`g:${r.id}`, {

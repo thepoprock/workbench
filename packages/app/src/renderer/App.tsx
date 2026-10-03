@@ -8,7 +8,7 @@ import { Agents } from './Agents.tsx';
 import { putSessions, statusClass, useProjectSessions } from './sessions.ts';
 import { hub } from './hub.ts';
 import { Projects } from './Projects.tsx';
-import { openChangelog, openHistory, openTerminal } from './dock.ts';
+import { openChangelog, openErrors, openHistory, openTerminal } from './dock.ts';
 import { Search } from './Search.tsx';
 import { Workspace } from './Workspace.tsx';
 
@@ -61,6 +61,7 @@ export function App() {
   const [name, setName] = useState('');
   const [error, setError] = useState<string | null>(null);
   const [searching, setSearching] = useState(false);
+  const [errorCounts, setErrorCounts] = useState<Record<string, number>>({});
   // An action waiting for a given project's dock (opening a search hit in another project).
   const [pending, setPending] = useState<{ projectId: string; run: (dock: DockviewApi) => void } | null>(null);
 
@@ -130,6 +131,25 @@ export function App() {
     [current, dock],
   );
 
+  // Open-error counts: sidebar badges, title bar, dock badge; alerts become notifications.
+  useEffect(() => {
+    if (status !== 'connected') return;
+    const refreshCounts = () =>
+      hub.call('errors.counts', {}).then((c) => {
+        setErrorCounts(c);
+        window.workbench.setBadge(Object.values(c).reduce((a, b) => a + b, 0));
+      });
+    void refreshCounts();
+    return hub.onPush((p) => {
+      if (p.event !== 'errors.update') return;
+      void refreshCounts();
+      if (p.data.alert) {
+        const name = projects.find((x) => x.id === p.data.error.projectId)?.name ?? 'Workbench';
+        window.workbench.notify(`${name}: new error`, p.data.error.title);
+      }
+    });
+  }, [status, projects]);
+
   useEffect(() => {
     if (pending && dock && current?.id === pending.projectId) {
       pending.run(dock);
@@ -145,7 +165,12 @@ export function App() {
       }
       const run = async (d: DockviewApi) => {
         try {
-          if (h.source === 'commit') {
+          if (h.source === 'error') {
+            const errs = await hub.call('errors.list', { projectId: h.projectId! });
+            const occ = await Promise.all(errs.map(async (e) => ({ e, o: await hub.call('errors.occurrences', { id: e.id, limit: 50 }) })));
+            const match = occ.find(({ o }) => o.some((x) => x.ts === h.ts))?.e;
+            openErrors(d, h.projectId!, match?.id);
+          } else if (h.source === 'commit') {
             openChangelog(d, h.projectId!);
           } else if (h.source === 'transcript') {
             const s = await hub.call('agent.start', { projectId: h.projectId!, resume: h.transcriptId!, cols: 100, rows: 30 });
@@ -175,6 +200,11 @@ export function App() {
       if (e.shiftKey && k === 'f') {
         e.preventDefault();
         setSearching(true);
+        return;
+      }
+      if (e.shiftKey && k === 'e') {
+        e.preventDefault();
+        if (dock && current) openErrors(dock, current.id);
         return;
       }
       if (e.shiftKey && k === 'l') {
@@ -243,6 +273,7 @@ export function App() {
 
         <div className="section-label spaced">Projects</div>
         <Projects
+          errorCounts={errorCounts}
           projects={projects}
           selected={currentIdea ? null : selected}
           onSelect={setSelected}
@@ -312,6 +343,15 @@ export function App() {
         <div className="titlebar drag">
           <span className="titlebar-name">{currentIdea ? 'Idea' : (current?.name ?? 'Workbench')}</span>
           {current?.rootPath && <span className="muted titlebar-path">— {current.rootPath}</span>}
+          {current && (
+            <button
+              className={`search-button ${errorCounts[current.id] ? 'has-errors' : ''}`}
+              onClick={() => dock && openErrors(dock, current.id)}
+              disabled={!dock}
+            >
+              Errors{errorCounts[current.id] ? ` (${errorCounts[current.id]})` : ''} <kbd>⌘⇧E</kbd>
+            </button>
+          )}
           {current && (
             <button className="search-button" onClick={() => dock && openChangelog(dock, current.id)} disabled={!dock}>
               Changelog <kbd>⌘⇧L</kbd>

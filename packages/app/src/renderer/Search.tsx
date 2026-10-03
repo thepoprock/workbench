@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import type { Project, SearchHit } from '@workbench/shared';
 import { hub } from './hub.ts';
 
-const SOURCE_LABEL = { agent: 'Agent', terminal: 'Terminal', transcript: 'Claude', commit: 'Commit' } as const;
+const SOURCE_LABEL = { agent: 'Agent', terminal: 'Terminal', transcript: 'Claude', commit: 'Commit', error: 'Error' } as const;
 
 const ago = (t: number | null) => {
   if (!t) return '';

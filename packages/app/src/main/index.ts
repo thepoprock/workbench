@@ -1,5 +1,5 @@
 import { join } from 'node:path';
-import { app, BrowserWindow, dialog, ipcMain, Menu, shell } from 'electron';
+import { app, BrowserWindow, dialog, ipcMain, Menu, Notification, shell } from 'electron';
 import { ensureHub } from './hub.ts';
 
 function createWindow(): void {
@@ -47,6 +47,18 @@ ipcMain.handle('menu:popup', (e, items: MenuItem[]) => {
     menu.popup({ window: win, callback: () => setTimeout(() => resolve(null), 150) });
   });
 });
+
+ipcMain.handle('app:notify', (e, title: string, body: string) => {
+  if (!Notification.isSupported()) return;
+  const n = new Notification({ title, body: body.slice(0, 240) });
+  n.on('click', () => {
+    const win = BrowserWindow.fromWebContents(e.sender);
+    win?.show();
+    win?.focus();
+  });
+  n.show();
+});
+ipcMain.handle('app:badge', (_e, count: number) => app.dock?.setBadge(count > 0 ? String(count) : ''));
 
 ipcMain.handle('shell:reveal', (_e, path: string) => shell.openPath(path));
 

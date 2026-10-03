@@ -34,6 +34,12 @@ live in `~/Library/Application Support/Workbench/`.
 - Changelog: ⌘⇧L (or **Changelog** in the title bar) per project — git commits
   (polled every 20 s), one entry per Claude session (prompt, files edited,
   commands, Claude's final reply; updated after each turn) and your notes.
+- Errors: ⌘⇧E (or **Errors** in the title bar). Terminal output and tailed log
+  files are matched against detection rules (defaults: Go panic, Python
+  exceptions, TS/npm/Rust errors, `level=ERROR`), agent tool failures and agent
+  crashes are recorded too. Errors are grouped by a normalised fingerprint;
+  new or regressed ones notify (once per 10 min) and the dock badge shows the
+  open count. A commit saying `fixes err-xxxxxx` resolves that error.
 - History viewer: **Earlier output** (hover a pane) pages through a session's
   full saved output; search hits open it at the matching part.
 - Throwaway data dir: `WORKBENCH_DATA_DIR=/some/tmp npm run dev`

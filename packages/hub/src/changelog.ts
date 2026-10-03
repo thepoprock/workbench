@@ -38,6 +38,7 @@ async function git(cwd: string, args: string[]): Promise<string> {
 // (rebuilt from its hook events after each turn), and manual notes.
 export class Changelog {
   private heads = new Map<string, string>(); // project id → last seen HEAD
+  onCommit: (projectId: string, sha: string, subject: string) => void = () => {};
 
   constructor(
     private db: DB,
@@ -182,6 +183,7 @@ export class Changelog {
       this.db
         .prepare("INSERT INTO events (ts, project_id, kind, payload, text) VALUES (?, ?, 'git.commit', ?, ?)")
         .run(Number(at) * 1000, projectId, JSON.stringify({ sha, author }), subject);
+      this.onCommit(projectId, sha, subject);
       added++;
     }
     this.heads.set(projectId, head);

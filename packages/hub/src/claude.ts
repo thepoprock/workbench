@@ -23,6 +23,7 @@ const HOOK_EVENTS = [
   'UserPromptSubmit',
   'PreToolUse',
   'PostToolUse',
+  'PostToolUseFailure',
   'Notification',
   'Stop',
   'SessionEnd',
@@ -62,6 +63,7 @@ export class ClaudeHarness {
   private historyCache = new Map<string, { key: string; t: ClaudeTranscript | null }>();
 
   onTurn: (sessionId: string) => void = () => {}; // a turn finished (Stop hook)
+  onToolFailure: (session: TermSession, hook: Record<string, unknown>) => void = () => {};
 
   constructor(
     private terms: Terminals,
@@ -150,6 +152,7 @@ export class ClaudeHarness {
         text = activity;
         break;
       case 'PostToolUse':
+      case 'PostToolUseFailure':
         state = 'working';
         activity = 'Thinking…';
         break;
@@ -182,6 +185,7 @@ export class ClaudeHarness {
     this.terms.recordEvent(sessionId, `agent.${event}`, trimPayload(h), text || undefined);
     if (event === 'SessionEnd') this.hookTokens.delete(sessionId);
     if (event === 'Stop') this.onTurn(sessionId);
+    if (event === 'PostToolUseFailure') this.onToolFailure(session, h);
     return 204;
   }
 
