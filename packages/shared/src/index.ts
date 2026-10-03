@@ -52,7 +52,7 @@ export interface AgentInfo {
 // A PTY-backed session: a plain shell, or an agent CLI running in a terminal.
 export interface TermSession {
   id: string;
-  projectId: string;
+  projectId: string | null; // null for an idea's Claude session
   kind: SessionKind;
   harness: string | null; // 'claude-code' for agents
   agent: AgentInfo | null;
@@ -68,6 +68,7 @@ export interface TermSession {
 export interface Pushes {
   'term.data': { sessionId: string; data: string }; // only to attached clients
   'term.update': TermSession; // to everyone: status/title changes
+  'idea.update': Idea; // metadata or a file in its folder changed
 }
 
 // A past Claude Code conversation, read from ~/.claude/projects/<cwd>/<id>.jsonl.
@@ -78,6 +79,21 @@ export interface ClaudeTranscript {
   startedAt: number | null;
   updatedAt: number;
   bytes: number;
+}
+
+export type IdeaStage = 'idea' | 'spec' | 'plan' | 'promoted';
+
+export interface Idea {
+  id: string;
+  title: string;
+  stage: IdeaStage;
+  folder: string;
+  files: string[]; // markdown files in the folder, IDEA.md first
+  sessionId: string | null; // workbench session of its Claude agent
+  projectId: string | null; // set once promoted
+  archived: boolean;
+  createdAt: number;
+  updatedAt: number;
 }
 
 export type HitSource = 'agent' | 'terminal' | 'transcript';
@@ -117,6 +133,7 @@ export interface Methods {
   // Terminals. The hub owns the PTY; clients attach/detach freely.
   'term.create': { params: { projectId: string; cwd?: string; cols: number; rows: number }; result: TermSession };
   'term.list': { params: { projectId: string }; result: TermSession[] };
+  'term.get': { params: { sessionId: string }; result: TermSession }; // live or ended
   // snapshot = serialized screen + scrollback; term.data pushes follow it.
   'term.attach': { params: { sessionId: string }; result: { session: TermSession; snapshot: string } };
   'term.detach': { params: { sessionId: string }; result: null };
@@ -127,6 +144,17 @@ export interface Methods {
   // Agents (Claude Code). Run in a hub-owned PTY like terminals; all term.* apply.
   'agent.start': { params: { projectId: string; resume?: string; cols: number; rows: number }; result: TermSession };
   'agent.history': { params: { projectId: string }; result: ClaudeTranscript[] };
+
+  // Ideas: a folder of markdown files worked up with Claude, then promoted to a project.
+  'idea.list': { params: { includeArchived?: boolean }; result: Idea[] };
+  'idea.create': { params: { title: string }; result: Idea };
+  'idea.update': { params: { id: string; title?: string; stage?: IdeaStage; archived?: boolean }; result: Idea };
+  'idea.read': { params: { id: string; file: string }; result: string };
+  'idea.write': { params: { id: string; file: string; content: string }; result: null };
+  // Starts (or resumes, or returns the running) Claude session for the idea.
+  'idea.agent': { params: { id: string; cols: number; rows: number }; result: TermSession };
+  // Copies the idea's files into rootPath (never overwriting) and creates a project there.
+  'idea.promote': { params: { id: string; rootPath: string; name?: string }; result: { project: Project; skipped: string[] } };
 
   // History. Search spans agent events, terminal output and Claude transcripts.
   'history.search': { params: { query: string; projectId?: string; limit?: number }; result: SearchHit[] };

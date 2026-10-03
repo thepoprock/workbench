@@ -25,6 +25,12 @@ live in `~/Library/Application Support/Workbench/`.
 - Search: ⌘⇧F searches terminal output, agent activity and every Claude
   conversation under `~/.claude/projects` (this project or all). Terminal
   output becomes searchable when its chunk closes (exit, 30 s quiet, or 256 KB).
+- Ideas: **Ideas +** captures one; each lives in its own folder
+  (`…/Workbench/ideas/<slug>/IDEA.md`). **Draft with Claude** starts Claude
+  there, briefed to interview you, then write SPEC.md and PLAN.md — they open
+  as tabs live and the stage advances. Claude asks to trust each new idea
+  folder once. **Promote to project…** copies the docs (never overwriting)
+  into a folder you pick and creates the project.
 - History viewer: **Earlier output** (hover a pane) pages through a session's
   full saved output; search hits open it at the matching part.
 - Throwaway data dir: `WORKBENCH_DATA_DIR=/some/tmp npm run dev`

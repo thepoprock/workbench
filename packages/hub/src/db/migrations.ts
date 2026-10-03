@@ -146,4 +146,11 @@ export const migrations: string[] = [
   );
   CREATE VIRTUAL TABLE transcript_fts USING fts5(text, transcript_id UNINDEXED, role UNINDEXED, ts UNINDEXED);
   `,
+
+  // 4 — ideas live in their own folder (IDEA.md, SPEC.md, PLAN.md); one Claude session each
+  `
+  ALTER TABLE ideas ADD COLUMN folder TEXT;
+  ALTER TABLE ideas ADD COLUMN session_id TEXT;
+  ALTER TABLE ideas ADD COLUMN archived INTEGER NOT NULL DEFAULT 0;
+  `,
 ];

@@ -1,6 +1,9 @@
 import { useCallback, useEffect, useState, useSyncExternalStore, type FormEvent } from 'react';
 import type { DockviewApi } from 'dockview-react';
-import type { HubInfo, Project, SearchHit, TermSession } from '@workbench/shared';
+import type { HubInfo, Idea, Project, SearchHit, TermSession } from '@workbench/shared';
+import { IdeasList } from './IdeasList.tsx';
+import { IdeaView } from './IdeaView.tsx';
+import { loadIdeas, useIdeas } from './ideas.ts';
 import { Agents } from './Agents.tsx';
 import { putSessions, statusClass, useProjectSessions } from './sessions.ts';
 import { hub } from './hub.ts';
@@ -33,6 +36,21 @@ const saveSelected = (id: string | null) => {
     else localStorage.removeItem(SELECTED_KEY);
   } catch {}
 };
+// Which main view is showing: a project's workspace or an idea.
+const IDEA_KEY = 'workbench.selectedIdea';
+const loadIdeaSel = () => {
+  try {
+    return localStorage.getItem(IDEA_KEY);
+  } catch {
+    return null;
+  }
+};
+const saveIdeaSel = (id: string | null) => {
+  try {
+    if (id) localStorage.setItem(IDEA_KEY, id);
+    else localStorage.removeItem(IDEA_KEY);
+  } catch {}
+};
 
 export function App() {
   const status = useHubStatus();
@@ -46,17 +64,30 @@ export function App() {
   // An action waiting for a given project's dock (opening a search hit in another project).
   const [pending, setPending] = useState<{ projectId: string; run: (dock: DockviewApi) => void } | null>(null);
 
-  const setSelected = useCallback((id: string | null) => {
-    setSelectedState(id);
-    saveSelected(id);
+  const [ideaSel, setIdeaSelState] = useState<string | null>(loadIdeaSel);
+  const ideas = useIdeas();
+  const setIdeaSel = useCallback((id: string | null) => {
+    setIdeaSelState(id);
+    saveIdeaSel(id);
   }, []);
+  const setSelected = useCallback(
+    (id: string | null) => {
+      setSelectedState(id);
+      saveSelected(id);
+      if (id) setIdeaSel(null); // a project takes over the main view
+    },
+    [setIdeaSel],
+  );
 
-  const current = projects.find((p) => p.id === selected && !p.archived) ?? null;
+  const currentIdea = ideas.find((i) => i.id === ideaSel) ?? null;
+  // While an idea is open, project-specific UI is hidden (but the selection is kept).
+  const current = currentIdea ? null : (projects.find((p) => p.id === selected && !p.archived) ?? null);
 
   const refresh = useCallback(async () => {
     try {
       setInfo(await hub.call('hub.info', {}));
       setProjects(await hub.call('project.list', { includeArchived: true }));
+      await loadIdeas();
     } catch (err) {
       setError((err as Error).message);
     }
@@ -156,6 +187,19 @@ export function App() {
     return () => window.removeEventListener('keydown', onKey, true);
   }, [newTerminal, startAgent]);
 
+  const promote = async (idea: Idea) => {
+    const dir = await window.workbench.pickFolder();
+    if (!dir) return;
+    try {
+      const { project, skipped } = await hub.call('idea.promote', { id: idea.id, rootPath: dir });
+      await refresh();
+      setSelected(project.id);
+      setError(skipped.length ? `Promoted. Kept existing ${skipped.join(', ')} in ${dir} (not overwritten).` : null);
+    } catch (err) {
+      setError((err as Error).message);
+    }
+  };
+
   const create = async (rootPath?: string) => {
     const projectName = name.trim() || (rootPath ? basename(rootPath) : '');
     try {
@@ -188,10 +232,12 @@ export function App() {
     <div className="shell">
       <aside className="sidebar">
         <div className="titlebar-spacer" />
-        <div className="section-label">Projects</div>
+        <IdeasList ideas={ideas} selected={ideaSel} onSelect={setIdeaSel} onError={setError} />
+
+        <div className="section-label spaced">Projects</div>
         <Projects
           projects={projects}
-          selected={selected}
+          selected={currentIdea ? null : selected}
           onSelect={setSelected}
           onChanged={refresh}
           onError={setError}
@@ -257,13 +303,15 @@ export function App() {
 
       <main className="workspace">
         <div className="titlebar drag">
-          <span className="titlebar-name">{current?.name ?? 'Workbench'}</span>
+          <span className="titlebar-name">{currentIdea ? 'Idea' : (current?.name ?? 'Workbench')}</span>
           {current?.rootPath && <span className="muted titlebar-path">— {current.rootPath}</span>}
           <button className="search-button" onClick={() => setSearching(true)} disabled={status !== 'connected'}>
             Search history <kbd>⌘⇧F</kbd>
           </button>
         </div>
-        {current ? (
+        {currentIdea ? (
+          <IdeaView key={currentIdea.id} idea={currentIdea} onPromote={(i) => void promote(i)} onError={setError} />
+        ) : current ? (
           <Workspace key={current.id} project={current} onApi={setDock} />
         ) : (
           <div className="placeholder">

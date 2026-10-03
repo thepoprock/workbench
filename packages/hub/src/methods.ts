@@ -6,6 +6,7 @@ import { schemaVersion, type DB } from './db/index.ts';
 import { reply, type Client, type Dispatch } from './server.ts';
 import type { ClaudeHarness } from './claude.ts';
 import type { History } from './history.ts';
+import type { Ideas } from './ideas.ts';
 import type { Terminals } from './terminals.ts';
 
 type Handler<M extends Method> = (params: Methods[M]['params'], client: Client) => unknown;
@@ -36,12 +37,33 @@ export function makeDispatch(
   terms: Terminals,
   claude: ClaudeHarness,
   history: History,
+  ideas: Ideas,
   info: Omit<HubInfo, 'schemaVersion' | 'protocol'>,
 ): Dispatch {
   const getProject = (id: string): ProjectRow => {
     const row = db.prepare('SELECT * FROM projects WHERE id = ?').get(id) as ProjectRow | undefined;
     if (!row) throw new Error('unknown project');
     return row;
+  };
+
+  const createProject = (name: string, rootPath?: string): Project => {
+    const trimmed = name.trim();
+    if (!trimmed) throw new Error('project name is required');
+    if (rootPath) checkDir(rootPath);
+    const row: ProjectRow = {
+      id: randomUUID(),
+      name: trimmed,
+      root_path: rootPath ?? null,
+      created_at: Date.now(),
+      archived: 0,
+    };
+    db.prepare('INSERT INTO projects (id, name, root_path, created_at) VALUES (?, ?, ?, ?)').run(
+      row.id,
+      row.name,
+      row.root_path,
+      row.created_at,
+    );
+    return toProject(row);
   };
 
   const handlers: Handlers = {
@@ -56,25 +78,7 @@ export function makeDispatch(
           .all() as unknown as ProjectRow[]
       ).map(toProject),
 
-    'project.create': ({ name, rootPath }) => {
-      const trimmed = name.trim();
-      if (!trimmed) throw new Error('project name is required');
-      if (rootPath) checkDir(rootPath);
-      const row: ProjectRow = {
-        id: randomUUID(),
-        name: trimmed,
-        root_path: rootPath ?? null,
-        created_at: Date.now(),
-        archived: 0,
-      };
-      db.prepare('INSERT INTO projects (id, name, root_path, created_at) VALUES (?, ?, ?, ?)').run(
-        row.id,
-        row.name,
-        row.root_path,
-        row.created_at,
-      );
-      return toProject(row);
-    },
+    'project.create': ({ name, rootPath }) => createProject(name, rootPath),
 
     'project.update': ({ id, name, rootPath }) => {
       const row = getProject(id);
@@ -103,6 +107,7 @@ export function makeDispatch(
 
     'term.create': ({ projectId, cwd, cols, rows }) => terms.create(projectId, cwd, cols, rows),
     'term.list': ({ projectId }) => terms.list(projectId),
+    'term.get': ({ sessionId }) => terms.info(sessionId),
     'term.attach': async ({ sessionId }, client) => {
       const { session, snapshot, release } = await terms.attach(sessionId, client);
       return reply({ session, snapshot }, release);
@@ -125,6 +130,14 @@ export function makeDispatch(
       const root = getProject(projectId).root_path;
       return root ? claude.history(root) : [];
     },
+
+    'idea.list': ({ includeArchived }) => ideas.list(includeArchived),
+    'idea.create': ({ title }) => ideas.create(title),
+    'idea.update': ({ id, ...patch }) => ideas.update(id, patch),
+    'idea.read': ({ id, file }) => ideas.read(id, file),
+    'idea.write': ({ id, file, content }) => ideas.write(id, file, content),
+    'idea.agent': ({ id, cols, rows }) => ideas.agent(id, cols, rows),
+    'idea.promote': ({ id, rootPath, name }) => ideas.promote(id, rootPath, name, createProject),
 
     'history.search': ({ query, projectId, limit }) => history.search(query, projectId, limit),
     'scrollback.chunks': ({ sessionId }) => ({ session: terms.info(sessionId), chunks: terms.chunks(sessionId) }),

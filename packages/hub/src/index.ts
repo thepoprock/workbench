@@ -9,6 +9,7 @@ import { startServer, type Server } from './server.ts';
 import { Terminals } from './terminals.ts';
 import { ClaudeHarness, HARNESS_ID } from './claude.ts';
 import { History } from './history.ts';
+import { Ideas } from './ideas.ts';
 
 const VERSION = '0.0.1';
 
@@ -59,7 +60,8 @@ async function main(): Promise<void> {
   ).run(HARNESS_ID, Date.now());
   const claude = new ClaudeHarness(terms, () => server?.port ?? 0);
   const history = new History(db);
-  const dispatch = makeDispatch(db, terms, claude, history, {
+  const ideas = new Ideas(db, terms, claude, (idea) => server?.broadcast({ event: 'idea.update', data: idea }));
+  const dispatch = makeDispatch(db, terms, claude, history, ideas, {
     version: VERSION,
     pid: process.pid,
     startedAt,
@@ -88,6 +90,7 @@ async function main(): Promise<void> {
   const shutdown = async (signal: string) => {
     log(`${signal}: shutting down`);
     terms.shutdown();
+    ideas.shutdown();
     await server?.close();
     db.close();
     try {

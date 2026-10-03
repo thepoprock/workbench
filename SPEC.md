@@ -155,7 +155,7 @@ custom harnesses → local-model harness → remote agents.
 | M2 ✅ | Projects | Project CRUD, sidebar, per-project layouts & sessions |
 | M3 ✅ | Claude Code | Launch/resume in pane; hooks → live status; transcript import |
 | M4 ✅ | History | FTS search across sessions/events; scrollback replay |
-| M5 | Ideas | Idea board, agent-assisted spec drafting, promote to project |
+| M5 ✅ | Ideas | Idea board, agent-assisted spec drafting, promote to project |
 | M6 | Changelog | Git watcher + session summaries per project |
 | M7 | Errors | Ingest, fingerprint, group, alert |
 | M8 | Harnesses | Agent SDK custom harnesses + local-model harness (Ollama/LM Studio) |

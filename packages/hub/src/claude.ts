@@ -66,7 +66,15 @@ export class ClaudeHarness {
     private hubPort: () => number,
   ) {}
 
-  start(projectId: string, cwd: string | undefined, cols: number, rows: number, resume?: string): TermSession {
+  // `prompt` opens a new conversation with that first message (ignored on resume).
+  start(
+    projectId: string | null,
+    cwd: string | undefined,
+    cols: number,
+    rows: number,
+    resume?: string,
+    prompt?: string,
+  ): TermSession {
     this.claudePath ??= findClaude();
     if (!this.claudePath) throw new Error('claude CLI not found on your login shell PATH');
 
@@ -75,6 +83,7 @@ export class ClaudeHarness {
     const externalId = resume ?? randomUUID();
     const shell = process.env.SHELL || '/bin/zsh';
     const claudeArgs = [resume ? '--resume' : '--session-id', externalId, '--settings', HOOK_SETTINGS];
+    if (prompt && !resume) claudeArgs.push('--', prompt);
 
     this.hookTokens.set(id, Buffer.from(token));
     try {

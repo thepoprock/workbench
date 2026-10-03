@@ -30,7 +30,7 @@ export interface SpawnSpec {
 
 interface SessionRow {
   id: string;
-  project_id: string;
+  project_id: string | null;
   kind: SessionKind;
   harness_id: string | null;
   external_id: string | null;
@@ -147,19 +147,24 @@ export class Terminals {
 
   // The session id is chosen by the caller when it must be known before spawn
   // (agents bake it into their hook URL).
+  // projectId null = not part of a project (an idea's agent); cwd is then required.
   create(
-    projectId: string,
+    projectId: string | null,
     cwd: string | undefined,
     cols: number,
     rows: number,
     spec?: SpawnSpec,
     id: string = randomUUID(),
   ): TermSession {
-    const project = this.db.prepare('SELECT root_path FROM projects WHERE id = ?').get(projectId) as
-      | { root_path: string | null }
-      | undefined;
-    if (!project) throw new Error('unknown project');
-    const dir = cwd ?? project.root_path ?? homedir();
+    let root: string | null = null;
+    if (projectId) {
+      const project = this.db.prepare('SELECT root_path FROM projects WHERE id = ?').get(projectId) as
+        | { root_path: string | null }
+        | undefined;
+      if (!project) throw new Error('unknown project');
+      root = project.root_path;
+    } else if (!cwd) throw new Error('a session outside a project needs a directory');
+    const dir = cwd ?? root ?? homedir();
     if (!existsSync(dir)) throw new Error(`directory does not exist: ${dir}`);
 
     const shell = process.env.SHELL || '/bin/zsh';
@@ -311,7 +316,15 @@ export class Terminals {
   }
 
   input(sessionId: string, data: string): void {
-    this.live.get(sessionId)?.proc?.write(data);
+    const s = this.live.get(sessionId);
+    if (!s?.proc) return;
+    s.proc.write(data);
+    // An agent waiting on the user gets no hook when they dismiss the prompt
+    // (Esc), so infer it from the keystroke; the next hook corrects either way.
+    if (s.info.agent?.state === 'waiting') {
+      if (data === '\x1b') this.updateAgent(sessionId, { state: 'idle', activity: null });
+      else if (data.includes('\r')) this.updateAgent(sessionId, { state: 'working', activity: 'Thinking…' });
+    }
   }
 
   resize(sessionId: string, cols: number, rows: number): void {
