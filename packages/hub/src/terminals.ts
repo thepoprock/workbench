@@ -243,6 +243,11 @@ export class Terminals {
     return info;
   }
 
+  // Claude conversation ids of live agent panes (to mark sessions as ours).
+  agentExternalIds(): string[] {
+    return [...this.live.values()].flatMap((s) => (s.proc && s.info.agent?.externalId ? [s.info.agent.externalId] : []));
+  }
+
   get(sessionId: string): TermSession | null {
     return this.live.get(sessionId)?.info ?? null;
   }
@@ -447,7 +452,7 @@ function toSession(r: SessionRow): TermSession {
     projectId: r.project_id,
     kind: r.kind,
     harness: r.harness_id,
-    agent: r.kind === 'agent' ? { state: 'idle', activity: null, externalId: r.external_id } : null,
+    agent: r.kind === 'agent' ? { state: 'idle', activity: null, externalId: r.external_id, remoteUrl: null } : null,
     title: r.title ?? 'shell',
     cwd: r.cwd,
     status: r.status,

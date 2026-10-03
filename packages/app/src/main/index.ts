@@ -29,22 +29,52 @@ function openExternally(url: string): void {
   }
 }
 
+// The Remote pane embeds claude.ai (Remote Control sessions) in a <webview>:
+// its own persistent partition, no preload, no Node, and it may only browse
+// claude.ai plus the sign-in providers claude.ai hands off to.
+const REMOTE_PARTITION = 'persist:claude-remote';
+const REMOTE_HOSTS = [/^claude\.ai$/, /\.claude\.ai$/, /^accounts\.google\.com$/, /^appleid\.apple\.com$/];
+function isRemoteUrl(url: string): boolean {
+  try {
+    const u = new URL(url);
+    return u.protocol === 'https:' && REMOTE_HOSTS.some((re) => re.test(u.hostname));
+  } catch {
+    return false;
+  }
+}
+
 // Applies to every webContents the app ever creates.
 app.on('web-contents-created', (_e, contents) => {
+  const isRemote = contents.getType() === 'webview';
+  const allowed = isRemote ? isRemoteUrl : isAppUrl;
   contents.on('will-navigate', (e, url) => {
-    if (isAppUrl(url)) return;
+    if (allowed(url)) return;
     e.preventDefault();
     openExternally(url);
   });
   contents.on('will-redirect', (e, url) => {
-    if (!isAppUrl(url)) e.preventDefault();
+    if (!allowed(url)) e.preventDefault();
   });
   contents.setWindowOpenHandler(({ url }) => {
-    openExternally(url);
+    // claude.ai / sign-in popups stay in the pane; everything else goes to the browser.
+    if (isRemote && isRemoteUrl(url)) void contents.loadURL(url);
+    else openExternally(url);
     return { action: 'deny' };
   });
-  // No embedded web content until a pane needs it (and then with its own rules).
-  contents.on('will-attach-webview', (e) => e.preventDefault());
+  // Only our page may embed, only claude.ai, and never with privileges.
+  contents.on('will-attach-webview', (e, prefs, params) => {
+    if (isRemote || !isAppUrl(contents.getURL()) || !isRemoteUrl(params.src)) {
+      e.preventDefault();
+      return;
+    }
+    delete prefs.preload;
+    prefs.nodeIntegration = false;
+    prefs.nodeIntegrationInSubFrames = false;
+    prefs.contextIsolation = true;
+    prefs.sandbox = true;
+    prefs.webSecurity = true;
+    prefs.partition = REMOTE_PARTITION;
+  });
 });
 
 // IPC is only answered for our own page.
@@ -67,6 +97,7 @@ function createWindow(): void {
       preload: join(__dirname, '../preload/index.cjs'),
       sandbox: true,
       contextIsolation: true,
+      webviewTag: true, // only for the Remote pane; locked down in will-attach-webview
     },
   });
 

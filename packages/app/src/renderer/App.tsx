@@ -9,7 +9,8 @@ import { HarnessManager } from './HarnessManager.tsx';
 import { putSessions, statusClass, useProjectSessions } from './sessions.ts';
 import { hub } from './hub.ts';
 import { Projects } from './Projects.tsx';
-import { openChangelog, openErrors, openHistory, openTerminal } from './dock.ts';
+import { openChangelog, openErrors, openHistory, openRemote, openTerminal } from './dock.ts';
+import { Elsewhere } from './Elsewhere.tsx';
 import { Search } from './Search.tsx';
 import { Workspace } from './Workspace.tsx';
 
@@ -296,11 +297,25 @@ export function App() {
 
         {current && (
           <Agents
+            onRemote={(url) => dock && openRemote(dock, url)}
             project={current}
             sessions={agents}
             canOpen={!!dock && status === 'connected'}
             onOpen={(s) => dock && openTerminal(dock, s.id, s.title)}
             onStart={(resume, harnessId) => void startAgent(resume, harnessId)}
+          />
+        )}
+
+        {current && (
+          <Elsewhere
+            project={current}
+            onAttached={(id, title) => {
+              if (!dock) return;
+              void hub.call('term.get', { sessionId: id }).then((s) => putSessions([s]));
+              openTerminal(dock, id, title);
+            }}
+            onOpenRemote={() => dock && openRemote(dock)}
+            onError={setError}
           />
         )}
 

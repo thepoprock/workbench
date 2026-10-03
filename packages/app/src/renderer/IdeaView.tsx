@@ -8,8 +8,13 @@ import { putSessions, statusClass, useSession } from './sessions.ts';
 import { Tab } from './Tab.tsx';
 import { TerminalPane } from './TerminalPane.tsx';
 import { HistoryPane } from './HistoryPane.tsx';
+import { bounded } from './Boundary.tsx';
 
-const components = { doc: IdeaDocPane, terminal: TerminalPane, history: HistoryPane };
+const components = {
+  doc: bounded('Document', IdeaDocPane),
+  terminal: bounded('Terminal', TerminalPane),
+  history: bounded('History', HistoryPane),
+};
 const tabComponents = { terminal: Tab };
 const STAGES: { id: IdeaStage; label: string }[] = [
   { id: 'idea', label: 'Idea' },

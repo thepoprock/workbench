@@ -67,6 +67,7 @@ export class Harnesses {
     if (!TYPES.includes(h.type)) throw new Error(`unknown harness type ${h.type}`);
     if (!h.name.trim()) throw new Error('harness needs a name');
     if (h.id === HARNESS_ID && h.type !== 'claude-code') throw new Error('Claude Code is built in');
+    if (h.id === HARNESS_ID && !h.enabled) throw new Error('Claude Code is always on');
     if (h.type === 'claude-code' && h.id !== HARNESS_ID) throw new Error('there is one Claude Code harness');
     if (h.type === 'local-model' && (!h.config.baseUrl || !h.config.model)) throw new Error('a local model needs a server URL and a model');
     if (h.type === 'custom' && !h.config.command?.trim()) throw new Error('a custom harness needs a command');
@@ -96,7 +97,14 @@ export class Harnesses {
     if (!project) throw new Error('unknown project');
     const h = this.get(harnessId ?? project.default_harness_id ?? HARNESS_ID);
     if (!h.enabled) throw new Error(`${h.name} is turned off — enable it under Harnesses`);
-    if (h.type === 'claude-code') return this.claude.start(projectId, undefined, cols, rows, resume);
+    if (h.type === 'claude-code') {
+      // Remote Control on unless switched off: the session is reachable from claude.ai and the phone.
+      const name = (this.db.prepare('SELECT name FROM projects WHERE id = ?').get(projectId) as { name: string }).name;
+      return this.claude.start(projectId, undefined, cols, rows, {
+        resume,
+        remoteName: h.config.remoteControl === 'off' ? undefined : name,
+      });
+    }
     if (resume) throw new Error(`${h.name} can't resume conversations`);
 
     const shell = process.env.SHELL || '/bin/zsh';

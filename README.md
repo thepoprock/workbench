@@ -47,6 +47,15 @@ live in `~/Library/Application Support/Workbench/`.
   commands. **Agents +** offers every enabled harness; a project's right-click
   menu sets its default (what ⌘⇧A starts). Any program can be a harness by
   POSTing the events documented in `packages/runner/events.mjs`.
+- Remote Control: Workbench starts Claude with Remote Control on (named after
+  the project; switch off with `remoteControl: "off"` on the Claude Code
+  harness), so each session is also reachable from claude.ai and your phone —
+  right-click an agent for its link. **Elsewhere** in the sidebar lists other
+  Claude sessions on this Mac (background agents: click to attach, right-click
+  to stop) and opens **Remote sessions**: claude.ai inside a sandboxed pane
+  (own storage, no Workbench access, claude.ai only) for driving Remote
+  Control sessions on other machines, e.g. one started on Windows with
+  `claude --remote-control`.
 - History viewer: **Earlier output** (hover a pane) pages through a session's
   full saved output; search hits open it at the matching part.
 - Throwaway data dir: `WORKBENCH_DATA_DIR=/some/tmp npm run dev`

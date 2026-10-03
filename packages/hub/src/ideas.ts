@@ -129,7 +129,11 @@ export class Ideas {
     if (prev?.status === 'running') return prev;
     // Resume the idea's conversation if there was one; otherwise start with the brief.
     const resume = prev?.agent?.externalId ?? undefined;
-    const s = this.claude.start(null, r.folder, cols, rows, resume, resume ? undefined : BRIEF);
+    const s = this.claude.start(null, r.folder, cols, rows, {
+      resume,
+      prompt: resume ? undefined : BRIEF,
+      remoteName: `Idea: ${r.title}`,
+    });
     this.db.prepare('UPDATE ideas SET session_id = ?, updated_at = ? WHERE id = ?').run(s.id, Date.now(), id);
     this.push(this.toIdea(this.row(id)));
     return s;

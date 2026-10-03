@@ -48,6 +48,20 @@ export interface AgentInfo {
   state: AgentState;
   activity: string | null; // e.g. "Bash: npm test", "needs permission to use Bash"
   externalId: string | null; // the harness's own session id (Claude session id)
+  remoteUrl?: string | null; // claude.ai link when Remote Control is on
+}
+
+// A Claude session running elsewhere on this Mac (`claude agents --json`).
+export interface LocalClaudeSession {
+  id: string | null; // background sessions: short id for attach/logs/stop
+  pid: number | null; // interactive sessions
+  kind: 'background' | 'interactive';
+  name: string;
+  cwd: string;
+  state: string; // idle / busy / blocked / …
+  startedAt: number | null;
+  sessionId: string | null; // Claude conversation id
+  ours: boolean; // launched by Workbench
 }
 
 // A PTY-backed session: a plain shell, or an agent CLI running in a terminal.
@@ -219,6 +233,10 @@ export interface Methods {
     params: { projectId: string; harnessId?: string; resume?: string; cols: number; rows: number };
     result: TermSession;
   };
+  // Claude sessions outside Workbench on this Mac, and control of background ones.
+  'local.sessions': { params: Empty; result: LocalClaudeSession[] };
+  'local.attach': { params: { id: string; projectId: string; cols: number; rows: number }; result: TermSession };
+  'local.stop': { params: { id: string }; result: null };
   'harness.list': { params: Empty; result: Harness[] };
   'harness.save': { params: { harness: Omit<Harness, 'id' | 'builtin'> & { id?: string } }; result: Harness };
   'harness.delete': { params: { id: string }; result: null };

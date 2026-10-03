@@ -144,6 +144,9 @@ export function makeDispatch(
       }
       return harnesses.start(projectId, harnessId, cols, rows, resume);
     },
+    'local.sessions': () => claude.localSessions(),
+    'local.attach': ({ id, projectId, cols, rows }) => claude.attach(id, projectId, cols, rows),
+    'local.stop': ({ id }) => claude.stop(id),
     'harness.list': () => harnesses.list(),
     'harness.save': ({ harness }) => harnesses.save(harness),
     'harness.delete': ({ id }) => harnesses.delete(id),

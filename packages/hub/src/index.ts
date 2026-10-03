@@ -75,6 +75,7 @@ async function main(): Promise<void> {
   // would inflate) and agents report failures through their hooks anyway.
   terms.onOutput = (s, data) => {
     if (s.kind === 'terminal') errors.feed(`term:${s.id}`, s.projectId, s.id, data);
+    if (s.harness === HARNESS_ID) claude.scanOutput(s.id, data);
   };
   terms.onEnded = (s, killedByUser) => {
     errors.endStream(`term:${s.id}`);

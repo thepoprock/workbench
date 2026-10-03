@@ -365,3 +365,15 @@ kbd { font: inherit; font-size: 11px; color: var(--muted); }
 }
 .hm-row select { flex: 0 0 auto; }
 .hm-servers .link { display: block; text-align: left; }
+
+/* remote control */
+.remote-pane { display: flex; flex-direction: column; width: 100%; height: 100%; background: var(--bg); }
+.remote-pane .note-input { flex: 1; }
+.remote-view { flex: 1; min-height: 0; display: flex; background: #fff; }
+.rc-chip {
+  margin-left: 6px; font-size: 9px; font-weight: 700; letter-spacing: .05em; padding: 0 4px; border-radius: 3px;
+  color: var(--accent); border: 1px solid rgba(106, 168, 255, .45); vertical-align: 1px;
+}
+
+.boundary { margin: auto; padding: 24px; max-width: 520px; color: var(--muted); text-align: center; }
+.boundary b { color: var(--bad); }

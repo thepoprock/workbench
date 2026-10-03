@@ -19,6 +19,7 @@ const STATE_LABEL: Record<string, string> = {
 };
 
 interface Props {
+  onRemote: (url: string) => void;
   project: Project;
   sessions: TermSession[]; // this project's agent sessions
   canOpen: boolean;
@@ -26,7 +27,7 @@ interface Props {
   onStart: (resume?: string, harnessId?: string) => void;
 }
 
-export function Agents({ project, sessions, canOpen, onOpen, onStart }: Props) {
+export function Agents({ onRemote, project, sessions, canOpen, onOpen, onStart }: Props) {
   const [showHistory, setShowHistory] = useState(false);
   const [history, setHistory] = useState<ClaudeTranscript[] | null>(null);
   const endedCount = sessions.filter((s) => s.status !== 'running').length;
@@ -72,11 +73,30 @@ export function Agents({ project, sessions, canOpen, onOpen, onStart }: Props) {
             <button
               className={`agent-row ${s.status !== 'running' ? 'ended' : ''}`}
               onClick={() => onOpen(s)}
-              title={s.agent?.activity ?? s.cwd}
+              onContextMenu={(e) => {
+                e.preventDefault();
+                const url = s.agent?.remoteUrl;
+                if (!url) return;
+                void window.workbench
+                  .menu([
+                    { id: 'here', label: 'Open on claude.ai (in Workbench)' },
+                    { id: 'browser', label: 'Open in browser' },
+                    { id: 'copy', label: 'Copy Remote Control link' },
+                  ])
+                  .then((c) => {
+                    if (c === 'here') onRemote(url);
+                    if (c === 'browser') window.open(url); // main process hands it to the browser
+                    if (c === 'copy') void navigator.clipboard.writeText(url);
+                  });
+              }}
+              title={s.agent?.remoteUrl ? `Remote Control on — right-click for the claude.ai link` : (s.agent?.activity ?? s.cwd)}
             >
               <span className={`dot ${statusClass(s)}`} />
               <span className="agent-text">
-                <span className="agent-title">{s.title}</span>
+                <span className="agent-title">
+                  {s.title}
+                  {s.status === 'running' && s.agent?.remoteUrl && <span className="rc-chip">RC</span>}
+                </span>
                 <span className="agent-activity">
                   {s.status === 'running'
                     ? (s.agent?.activity ?? STATE_LABEL[s.agent?.state ?? 'idle'])

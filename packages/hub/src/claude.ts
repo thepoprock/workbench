@@ -1,10 +1,12 @@
-import { execFileSync } from 'node:child_process';
+import { execFile, execFileSync } from 'node:child_process';
+import { promisify } from 'node:util';
 import { randomBytes, randomUUID, timingSafeEqual } from 'node:crypto';
 import { createReadStream, existsSync, readdirSync, statSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { basename, join } from 'node:path';
 import { createInterface } from 'node:readline';
-import type { AgentState, ClaudeTranscript, TermSession } from '@workbench/shared';
+import type { AgentState, ClaudeTranscript, LocalClaudeSession, TermSession } from '@workbench/shared';
+import { stripAnsi } from './text.ts';
 import type { Terminals } from './terminals.ts';
 
 // Claude Code harness. Runs the real `claude` CLI in a hub-owned PTY and
@@ -17,6 +19,10 @@ import type { Terminals } from './terminals.ts';
 // ~/.claude/projects/<cwd with non-alphanumerics → '-'>/<session id>.jsonl.
 
 export const HARNESS_ID = 'claude-code';
+const run = promisify(execFile);
+// Printed by Claude once Remote Control connects (verified on 2.1.288).
+const REMOTE_URL_RE = /https:\/\/claude\.ai\/code\/session_[A-Za-z0-9]+/;
+const BACKGROUND_ID_RE = /^[A-Za-z0-9_-]{1,64}$/;
 
 const HOOK_EVENTS = [
   'SessionStart',
@@ -70,23 +76,29 @@ export class ClaudeHarness {
     private hubPort: () => number,
   ) {}
 
-  // `prompt` opens a new conversation with that first message (ignored on resume).
+  private claude(): string {
+    this.claudePath ??= findClaude();
+    if (!this.claudePath) throw new Error('claude CLI not found on your login shell PATH');
+    return this.claudePath;
+  }
+
+  // opts.prompt opens a new conversation with that first message (ignored on resume).
+  // opts.remoteName turns on Remote Control under that name (claude.ai / phone).
   start(
     projectId: string | null,
     cwd: string | undefined,
     cols: number,
     rows: number,
-    resume?: string,
-    prompt?: string,
+    opts: { resume?: string; prompt?: string; remoteName?: string } = {},
   ): TermSession {
-    this.claudePath ??= findClaude();
-    if (!this.claudePath) throw new Error('claude CLI not found on your login shell PATH');
-
+    const claudePath = this.claude();
+    const { resume, prompt, remoteName } = opts;
     const id = randomUUID();
     const hookEnv = this.registerHooks(id);
     const externalId = resume ?? randomUUID();
     const shell = process.env.SHELL || '/bin/zsh';
     const claudeArgs = [resume ? '--resume' : '--session-id', externalId, '--settings', HOOK_SETTINGS];
+    if (remoteName) claudeArgs.push('--remote-control', remoteName);
     if (prompt && !resume) claudeArgs.push('--', prompt);
 
     try {
@@ -100,10 +112,10 @@ export class ClaudeHarness {
           kind: 'agent',
           harness: HARNESS_ID,
           file: shell,
-          args: ['-l', '-c', 'exec "$0" "$@"', this.claudePath, ...claudeArgs],
+          args: ['-l', '-c', 'exec "$0" "$@"', claudePath, ...claudeArgs],
           env: hookEnv,
           title: 'Claude',
-          agent: { state: 'starting', activity: null, externalId },
+          agent: { state: 'starting', activity: null, externalId, remoteUrl: null },
         },
         id,
       );
@@ -111,6 +123,59 @@ export class ClaudeHarness {
       this.unregisterHooks(id);
       throw err;
     }
+  }
+
+  // Watch a Claude pane's output for its Remote Control link (it can arrive split).
+  private tails = new Map<string, string>();
+  scanOutput(sessionId: string, data: string): void {
+    const s = this.terms.get(sessionId);
+    if (!s?.agent || s.agent.remoteUrl) return;
+    const text = ((this.tails.get(sessionId) ?? '') + stripAnsi(data)).slice(-400);
+    const m = REMOTE_URL_RE.exec(text);
+    if (m) {
+      this.tails.delete(sessionId);
+      this.terms.updateAgent(sessionId, { remoteUrl: m[0] });
+    } else this.tails.set(sessionId, text);
+  }
+
+  // Every Claude session on this Mac, as `claude agents --json` reports them.
+  async localSessions(): Promise<LocalClaudeSession[]> {
+    const { stdout } = await run(this.claude(), ['agents', '--json'], { timeout: 15_000, maxBuffer: 4 * 1024 * 1024 });
+    const ours = new Set(this.terms.agentExternalIds());
+    return (JSON.parse(stdout) as Record<string, unknown>[]).map((r) => {
+      const str = (k: string) => (typeof r[k] === 'string' ? (r[k] as string) : null);
+      const sessionId = str('sessionId');
+      return {
+        id: r.kind === 'background' ? str('id') : null,
+        pid: typeof r.pid === 'number' ? r.pid : Number(r.pid) || null,
+        kind: r.kind === 'background' ? 'background' : 'interactive',
+        name: str('name') ?? 'Claude',
+        cwd: str('cwd') ?? '',
+        state: str('state') ?? str('status') ?? 'unknown',
+        startedAt: typeof r.startedAt === 'number' ? r.startedAt : r.startedAt ? Date.parse(String(r.startedAt)) || null : null,
+        sessionId,
+        ours: !!sessionId && ours.has(sessionId),
+      };
+    });
+  }
+
+  // Open a background session in a pane (`claude attach`). It runs outside
+  // Workbench's hooks, so the pane is a plain terminal.
+  attach(id: string, projectId: string, cols: number, rows: number): TermSession {
+    if (!BACKGROUND_ID_RE.test(id)) throw new Error('bad session id');
+    const shell = process.env.SHELL || '/bin/zsh';
+    return this.terms.create(projectId, undefined, cols, rows, {
+      kind: 'terminal',
+      harness: null,
+      file: shell,
+      args: ['-l', '-c', 'exec "$0" "$@"', this.claude(), 'attach', id],
+      title: `claude attach ${id}`,
+    });
+  }
+
+  async stop(id: string): Promise<void> {
+    if (!BACKGROUND_ID_RE.test(id)) throw new Error('bad session id');
+    await run(this.claude(), ['stop', id], { timeout: 15_000 });
   }
 
   // Hook endpoint + secret for one agent session (any harness).
@@ -125,6 +190,7 @@ export class ClaudeHarness {
 
   unregisterHooks(sessionId: string): void {
     this.hookTokens.delete(sessionId);
+    this.tails.delete(sessionId);
   }
 
   // POST /hook/<session id>. Returns an HTTP status.

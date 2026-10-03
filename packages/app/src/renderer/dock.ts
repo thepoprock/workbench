@@ -42,3 +42,13 @@ export function openErrors(api: DockviewApi, projectId: string, errorId?: string
   }
   api.addPanel({ id: 'errors', component: 'errors', tabComponent: 'plain', title: 'Errors', params: { projectId, errorId } });
 }
+
+// One Remote pane per project; reopening points it at a new URL.
+export function openRemote(api: DockviewApi, url = 'https://claude.ai/code'): void {
+  const existing = api.getPanel('remote');
+  if (existing) {
+    existing.api.updateParameters({ url });
+    return existing.api.setActive();
+  }
+  api.addPanel({ id: 'remote', component: 'remote', tabComponent: 'plain', title: 'Remote', params: { url } });
+}

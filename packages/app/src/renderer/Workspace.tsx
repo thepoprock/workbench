@@ -7,9 +7,17 @@ import { HistoryTab, Tab } from './Tab.tsx';
 import { HistoryPane } from './HistoryPane.tsx';
 import { ChangelogPane } from './ChangelogPane.tsx';
 import { ErrorsPane } from './ErrorsPane.tsx';
+import { RemotePane } from './RemotePane.tsx';
+import { bounded } from './Boundary.tsx';
 import { TerminalPane } from './TerminalPane.tsx';
 
-const components = { terminal: TerminalPane, history: HistoryPane, changelog: ChangelogPane, errors: ErrorsPane };
+const components = {
+  terminal: bounded('Terminal', TerminalPane),
+  history: bounded('History', HistoryPane),
+  changelog: bounded('Changelog', ChangelogPane),
+  errors: bounded('Errors', ErrorsPane),
+  remote: bounded('Remote', RemotePane),
+};
 const tabComponents = { terminal: Tab, history: HistoryTab, plain: HistoryTab };
 const SAVE_DEBOUNCE_MS = 400;
 
