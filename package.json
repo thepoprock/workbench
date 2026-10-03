@@ -1,0 +1,24 @@
+{
+  "name": "workbench",
+  "private": true,
+  "workspaces": [
+    "packages/*"
+  ],
+  "scripts": {
+    "dev": "npm run dev -w @workbench/app",
+    "hub": "npm run start -w @workbench/hub",
+    "postinstall": "node node_modules/electron/install.js && chmod +x node_modules/node-pty/prebuilds/*/spawn-helper",
+    "typecheck": "tsc -p packages/shared && tsc -p packages/hub && tsc -p packages/app"
+  },
+  "devDependencies": {
+    "typescript": "^5.9.0",
+    "tsx": "^4.20.0",
+    "@types/node": "^24.0.0"
+  },
+  "allowScripts": {
+    "node-pty@1.1.0": true,
+    "esbuild@0.28.2": true,
+    "esbuild@0.25.12": true,
+    "fsevents@2.3.3": true
+  }
+}

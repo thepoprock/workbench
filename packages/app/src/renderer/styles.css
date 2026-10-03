@@ -1,0 +1,123 @@
+:root {
+  --bg: #0f1115;
+  --panel: #161920;
+  --border: #262a33;
+  --text: #e6e8ec;
+  --muted: #8a909c;
+  --accent: #6aa8ff;
+  --accent-bg: #1d2a3f;
+  --ok: #3fb950;
+  --warn: #d29922;
+  --bad: #f85149;
+  color-scheme: dark;
+}
+
+* { box-sizing: border-box; }
+html, body, #root { height: 100%; margin: 0; }
+body {
+  background: var(--bg);
+  color: var(--text);
+  font: 13px/1.4 -apple-system, BlinkMacSystemFont, 'SF Pro Text', sans-serif;
+  -webkit-font-smoothing: antialiased;
+  user-select: none;
+}
+
+.shell { display: flex; height: 100%; }
+
+.sidebar {
+  width: 240px;
+  flex-shrink: 0;
+  display: flex;
+  flex-direction: column;
+  background: var(--panel);
+  border-right: 1px solid var(--border);
+  padding: 0 8px 8px;
+}
+.titlebar-spacer { height: 38px; flex-shrink: 0; -webkit-app-region: drag; }
+.section-label {
+  font-size: 11px; font-weight: 600; text-transform: uppercase; letter-spacing: .06em;
+  color: var(--muted); padding: 4px 8px;
+}
+.section-label.with-action { display: flex; align-items: center; justify-content: space-between; margin-top: 14px; }
+.section-label.with-action button {
+  background: none; border: 0; color: var(--muted); font-size: 16px; line-height: 1; padding: 0 4px; border-radius: 4px;
+}
+.section-label.with-action button:hover:not(:disabled) { color: var(--text); background: #1e222b; }
+
+.list { list-style: none; margin: 0; padding: 0; overflow-y: auto; }
+.list button {
+  width: 100%; text-align: left; background: none; border: 0; color: var(--text);
+  padding: 6px 8px; border-radius: 6px; font: inherit; cursor: default;
+  display: flex; align-items: center; gap: 6px; overflow: hidden; white-space: nowrap; text-overflow: ellipsis;
+}
+.list button:hover { background: #1e222b; }
+.list button.active { background: var(--accent-bg); color: var(--accent); }
+.list button.ended { color: var(--muted); }
+.list .empty { color: var(--muted); padding: 6px 8px; }
+
+.new-project { display: flex; gap: 4px; margin-top: 8px; }
+.new-project input {
+  flex: 1; min-width: 0; padding: 6px 8px; border-radius: 6px;
+  border: 1px solid var(--border); background: var(--bg); color: var(--text); font: inherit;
+}
+.new-project button {
+  border: 1px solid var(--border); background: var(--bg); border-radius: 6px; padding: 0 8px;
+}
+.new-project button:hover:not(:disabled) { border-color: var(--accent); }
+.new-project input:focus { outline: none; border-color: var(--accent); }
+.error { color: var(--bad); padding: 6px 8px; font-size: 12px; }
+.spacer { flex: 1; }
+
+.hub-badge { display: flex; align-items: center; gap: 6px; font-size: 11px; padding: 6px 8px; color: var(--muted); }
+.hub-badge > span { white-space: nowrap; }
+.hub-badge .muted { overflow: hidden; text-overflow: ellipsis; min-width: 0; }
+.dot { width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0; }
+.dot.connected { background: var(--ok); }
+.dot.connecting { background: var(--warn); }
+.dot.disconnected { background: var(--bad); }
+.dot.ended { background: var(--muted); opacity: .5; }
+
+.workspace { flex: 1; display: flex; flex-direction: column; min-width: 0; }
+.titlebar {
+  height: 38px; flex-shrink: 0; display: flex; align-items: center; padding: 0 12px;
+  border-bottom: 1px solid var(--border); font-size: 12px;
+}
+.titlebar-name { font-weight: 600; }
+.titlebar .muted, .placeholder .muted { color: var(--muted); }
+.drag { -webkit-app-region: drag; }
+.drag button, .drag input { -webkit-app-region: no-drag; }
+
+/* dockview, tuned to our tokens */
+.dock { flex: 1; min-height: 0; }
+.dv-shell.dockview-theme-dark {
+  --dv-background-color: var(--bg);
+  --dv-group-view-background-color: var(--bg);
+  --dv-tabs-and-actions-container-background-color: var(--panel);
+  --dv-activegroup-visiblepanel-tab-background-color: var(--bg);
+  --dv-activegroup-hiddenpanel-tab-background-color: var(--panel);
+  --dv-inactivegroup-visiblepanel-tab-background-color: var(--bg);
+  --dv-inactivegroup-hiddenpanel-tab-background-color: var(--panel);
+  --dv-separator-border: var(--border);
+  --dv-paneview-header-border-color: var(--border);
+  --dv-tabs-and-actions-container-font-size: 12px;
+  --dv-tabs-and-actions-container-height: 32px;
+  --dv-activegroup-visiblepanel-tab-color: var(--text);
+  --dv-activegroup-hiddenpanel-tab-color: var(--muted);
+  --dv-inactivegroup-visiblepanel-tab-color: var(--muted);
+  --dv-inactivegroup-hiddenpanel-tab-color: var(--muted);
+  --dv-tab-divider-color: var(--border);
+}
+.tab { display: flex; align-items: center; gap: 6px; height: 100%; padding: 0 4px 0 10px; max-width: 220px; }
+.tab-title { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.tab-close {
+  background: none; border: 0; color: var(--muted); font-size: 14px; line-height: 1;
+  width: 18px; height: 18px; border-radius: 4px; padding: 0; visibility: hidden;
+}
+.tab:hover .tab-close, .dv-active-tab .tab-close { visibility: visible; }
+.tab-close:hover { background: #262a33; color: var(--text); }
+
+.term-host { width: 100%; height: 100%; padding: 4px 0 0 8px; background: var(--bg); }
+.term-host .xterm { height: 100%; }
+.term-host .xterm-viewport { background-color: var(--bg) !important; }
+.placeholder { margin: auto; text-align: center; color: var(--muted); }
+.placeholder h1 { color: var(--text); font-size: 20px; font-weight: 600; margin: 0 0 6px; }
