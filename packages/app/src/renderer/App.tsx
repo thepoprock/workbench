@@ -1,11 +1,13 @@
 import { useCallback, useEffect, useState, useSyncExternalStore, type FormEvent } from 'react';
 import type { DockviewApi } from 'dockview-react';
-import type { HubInfo, Project, TermSession } from '@workbench/shared';
+import type { HubInfo, Project, SearchHit, TermSession } from '@workbench/shared';
 import { Agents } from './Agents.tsx';
 import { putSessions, statusClass, useProjectSessions } from './sessions.ts';
 import { hub } from './hub.ts';
 import { Projects } from './Projects.tsx';
-import { openTerminal, Workspace } from './Workspace.tsx';
+import { openHistory, openTerminal } from './dock.ts';
+import { Search } from './Search.tsx';
+import { Workspace } from './Workspace.tsx';
 
 function useHubStatus() {
   return useSyncExternalStore(
@@ -40,6 +42,9 @@ export function App() {
   const [dock, setDock] = useState<DockviewApi | null>(null);
   const [name, setName] = useState('');
   const [error, setError] = useState<string | null>(null);
+  const [searching, setSearching] = useState(false);
+  // An action waiting for a given project's dock (opening a search hit in another project).
+  const [pending, setPending] = useState<{ projectId: string; run: (dock: DockviewApi) => void } | null>(null);
 
   const setSelected = useCallback((id: string | null) => {
     setSelectedState(id);
@@ -95,9 +100,50 @@ export function App() {
   );
 
   useEffect(() => {
+    if (pending && dock && current?.id === pending.projectId) {
+      pending.run(dock);
+      setPending(null);
+    }
+  }, [pending, dock, current?.id]);
+
+  const openHit = useCallback(
+    (h: SearchHit) => {
+      if (!h.projectId) {
+        setError(`Add ${h.where} as a project to resume that conversation.`);
+        return;
+      }
+      const run = async (d: DockviewApi) => {
+        try {
+          if (h.source === 'transcript') {
+            const s = await hub.call('agent.start', { projectId: h.projectId!, resume: h.transcriptId!, cols: 100, rows: 30 });
+            putSessions([s]);
+            openTerminal(d, s.id, s.title);
+          } else if (h.source === 'agent') {
+            const live = (await hub.call('term.list', { projectId: h.projectId! })).find((s) => s.id === h.sessionId);
+            if (live?.status === 'running') openTerminal(d, live.id, live.title);
+            else openHistory(d, { sessionId: h.sessionId!, ts: h.ts ?? undefined });
+          } else {
+            openHistory(d, { sessionId: h.sessionId!, seq: h.seq ?? undefined });
+          }
+        } catch (err) {
+          setError((err as Error).message);
+        }
+      };
+      if (h.projectId !== current?.id) setSelected(h.projectId);
+      setPending({ projectId: h.projectId, run: (d) => void run(d) });
+    },
+    [current?.id, setSelected],
+  );
+
+  useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       if (!e.metaKey || e.altKey) return;
       const k = e.key.toLowerCase();
+      if (e.shiftKey && k === 'f') {
+        e.preventDefault();
+        setSearching(true);
+        return;
+      }
       if (!e.shiftKey && k === 't') {
         e.preventDefault();
         void newTerminal();
@@ -213,6 +259,9 @@ export function App() {
         <div className="titlebar drag">
           <span className="titlebar-name">{current?.name ?? 'Workbench'}</span>
           {current?.rootPath && <span className="muted titlebar-path">— {current.rootPath}</span>}
+          <button className="search-button" onClick={() => setSearching(true)} disabled={status !== 'connected'}>
+            Search history <kbd>⌘⇧F</kbd>
+          </button>
         </div>
         {current ? (
           <Workspace key={current.id} project={current} onApi={setDock} />
@@ -223,6 +272,7 @@ export function App() {
           </div>
         )}
       </main>
+      {searching && <Search project={current} onOpen={openHit} onClose={() => setSearching(false)} />}
     </div>
   );
 }

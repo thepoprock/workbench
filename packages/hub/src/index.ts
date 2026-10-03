@@ -8,6 +8,7 @@ import { dataDir, dbPath, discoveryPath, ensureDirs } from './paths.ts';
 import { startServer, type Server } from './server.ts';
 import { Terminals } from './terminals.ts';
 import { ClaudeHarness, HARNESS_ID } from './claude.ts';
+import { History } from './history.ts';
 
 const VERSION = '0.0.1';
 
@@ -57,7 +58,8 @@ async function main(): Promise<void> {
     "INSERT OR IGNORE INTO harnesses (id, type, name, created_at) VALUES (?, 'claude-code', 'Claude Code', ?)",
   ).run(HARNESS_ID, Date.now());
   const claude = new ClaudeHarness(terms, () => server?.port ?? 0);
-  const dispatch = makeDispatch(db, terms, claude, {
+  const history = new History(db);
+  const dispatch = makeDispatch(db, terms, claude, history, {
     version: VERSION,
     pid: process.pid,
     startedAt,
@@ -75,6 +77,13 @@ async function main(): Promise<void> {
   const discovery: HubDiscovery = { port: server.port, token, pid: process.pid };
   writeFileSync(discoveryPath, JSON.stringify(discovery), { mode: 0o600 });
   log(`listening on 127.0.0.1:${server.port} (pid ${process.pid}, data ${dataDir})`);
+
+  // Index Claude transcripts in the background; searches top it up later.
+  const t0 = Date.now();
+  history
+    .refresh()
+    .then(() => log(`transcripts indexed in ${Date.now() - t0}ms`))
+    .catch((err) => log(`transcript index failed: ${(err as Error).message}`));
 
   const shutdown = async (signal: string) => {
     log(`${signal}: shutting down`);

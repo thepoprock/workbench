@@ -5,15 +5,17 @@ import { join } from 'node:path';
 import * as pty from 'node-pty';
 import headless from '@xterm/headless';
 import serialize from '@xterm/addon-serialize';
-import type { AgentInfo, SessionKind, TermSession, TermStatus } from '@workbench/shared';
+import type { AgentInfo, ScrollbackChunk, SessionKind, TermSession, TermStatus } from '@workbench/shared';
 import type { DB } from './db/index.ts';
 import { scrollbackDir } from './paths.ts';
 import type { Client } from './server.ts';
+import { stripAnsi } from './text.ts';
 
 const SCROLLBACK_LINES = 10_000; // live buffer, mirrored by the app's xterm
 const CHUNK_BYTES = 256 * 1024; // scrollback_chunks granularity on disk
 const DISK_TAIL_BYTES = 512 * 1024; // snapshot for sessions from a previous hub run
 const FLUSH_MS = 4; // batch PTY output before pushing
+const CHUNK_IDLE_MS = 30_000; // close (and index) a partial chunk after this long
 
 // What to run in the PTY. Default (no spec) is the user's login shell.
 export interface SpawnSpec {
@@ -87,6 +89,60 @@ export class Terminals {
   ) {
     // PTYs die with the hub; anything still marked running is from a previous run.
     db.prepare("UPDATE sessions SET status = 'lost', ended_at = ? WHERE status = 'running'").run(Date.now());
+    this.backfillIndex();
+    // Make quiet sessions' recent output searchable without waiting for 256KB.
+    setInterval(() => {
+      const now = Date.now();
+      for (const s of this.live.values()) {
+        if (s.proc && s.logBytes > s.chunk.start && now - s.chunk.tsStart >= CHUNK_IDLE_MS) this.closeChunk(s);
+      }
+    }, CHUNK_IDLE_MS / 2).unref();
+  }
+
+  // Chunk list for the viewer; a live session's growing tail is the last entry.
+  chunks(sessionId: string): ScrollbackChunk[] {
+    const rows = this.db
+      .prepare(
+        'SELECT seq, byte_start, byte_end, ts_start, ts_end FROM scrollback_chunks WHERE session_id = ? ORDER BY seq',
+      )
+      .all(sessionId) as { seq: number; byte_start: number; byte_end: number; ts_start: number; ts_end: number }[];
+    const out = rows.map((r) => ({
+      seq: r.seq,
+      byteStart: r.byte_start,
+      byteEnd: r.byte_end,
+      tsStart: r.ts_start,
+      tsEnd: r.ts_end,
+    }));
+    const s = this.live.get(sessionId);
+    if (s && s.logBytes > s.chunk.start) {
+      out.push({ seq: s.chunk.seq, byteStart: s.chunk.start, byteEnd: s.logBytes, tsStart: s.chunk.tsStart, tsEnd: Date.now() });
+    }
+    return out;
+  }
+
+  readChunk(sessionId: string, seq: number): string {
+    const c = this.chunks(sessionId).find((x) => x.seq === seq);
+    if (!c) throw new Error('unknown chunk');
+    return readRange(logPath(sessionId), c.byteStart, c.byteEnd);
+  }
+
+  // Index chunks closed before this table existed (or before a crash).
+  private backfillIndex(): void {
+    const missing = this.db
+      .prepare(
+        `SELECT c.session_id, c.seq, c.byte_start, c.byte_end FROM scrollback_chunks c
+         WHERE NOT EXISTS (SELECT 1 FROM scrollback_fts f WHERE f.session_id = c.session_id AND f.seq = c.seq)`,
+      )
+      .all() as { session_id: string; seq: number; byte_start: number; byte_end: number }[];
+    for (const c of missing) {
+      if (!existsSync(logPath(c.session_id))) continue;
+      this.indexChunk(c.session_id, c.seq, readRange(logPath(c.session_id), c.byte_start, c.byte_end));
+    }
+  }
+
+  private indexChunk(sessionId: string, seq: number, raw: string): void {
+    const text = stripAnsi(raw).trim();
+    if (text) this.db.prepare('INSERT INTO scrollback_fts (text, session_id, seq) VALUES (?, ?, ?)').run(text, sessionId, seq);
   }
 
   // The session id is chosen by the caller when it must be known before spawn
@@ -176,6 +232,15 @@ export class Terminals {
     return this.live.get(sessionId)?.info ?? null;
   }
 
+  // Live or ended.
+  info(sessionId: string): TermSession {
+    const live = this.live.get(sessionId);
+    if (live) return live.info;
+    const row = this.db.prepare(`SELECT ${SESSION_COLS} FROM sessions WHERE id = ?`).get(sessionId) as SessionRow | undefined;
+    if (!row) throw new Error('unknown session');
+    return toSession(row);
+  }
+
   // Merge into a live agent's state and tell clients. Persists the harness id.
   updateAgent(sessionId: string, patch: Partial<AgentInfo>): void {
     const s = this.live.get(sessionId);
@@ -212,13 +277,7 @@ export class Terminals {
   //     then release() delivers what was held.
   async attach(sessionId: string, client: Client): Promise<{ session: TermSession; snapshot: string; release: () => void }> {
     const s = this.live.get(sessionId);
-    if (!s) {
-      const row = this.db
-        .prepare(`SELECT ${SESSION_COLS} FROM sessions WHERE id = ?`)
-        .get(sessionId) as SessionRow | undefined;
-      if (!row) throw new Error('unknown session');
-      return { session: toSession(row), snapshot: readTail(logPath(sessionId)), release: () => {} };
-    }
+    if (!s) return { session: this.info(sessionId), snapshot: readTail(logPath(sessionId)), release: () => {} };
 
     this.flush(s);
     s.subscribers.delete(client);
@@ -300,6 +359,7 @@ export class Terminals {
         'INSERT INTO scrollback_chunks (session_id, seq, file, byte_start, byte_end, ts_start, ts_end) VALUES (?, ?, ?, ?, ?, ?, ?)',
       )
       .run(s.info.id, s.chunk.seq, `${s.info.id}.log`, s.chunk.start, s.logBytes, s.chunk.tsStart, now);
+    this.indexChunk(s.info.id, s.chunk.seq, readRange(logPath(s.info.id), s.chunk.start, s.logBytes));
     s.chunk = { seq: s.chunk.seq + 1, start: s.logBytes, tsStart: now };
   }
 
@@ -342,17 +402,21 @@ function toSession(r: SessionRow): TermSession {
   };
 }
 
-// Last bytes of a session log, for sessions whose screen is no longer in memory.
-function readTail(path: string): string {
-  if (!existsSync(path)) return '';
-  const size = statSync(path).size;
-  const len = Math.min(size, DISK_TAIL_BYTES);
+function readRange(path: string, start: number, end: number): string {
+  const len = Math.max(0, end - start);
   const buf = Buffer.alloc(len);
   const fd = openSync(path, 'r');
   try {
-    readSync(fd, buf, 0, len, size - len);
+    readSync(fd, buf, 0, len, start);
   } finally {
     closeSync(fd);
   }
   return buf.toString('utf8');
+}
+
+// Last bytes of a session log, for sessions whose screen is no longer in memory.
+function readTail(path: string): string {
+  if (!existsSync(path)) return '';
+  const size = statSync(path).size;
+  return readRange(path, size - Math.min(size, DISK_TAIL_BYTES), size);
 }

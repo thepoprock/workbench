@@ -6,6 +6,7 @@ import { WebglAddon } from '@xterm/addon-webgl';
 import '@xterm/xterm/css/xterm.css';
 import type { TermSession } from '@workbench/shared';
 import { hub } from './hub.ts';
+import { openHistory } from './dock.ts';
 
 export interface TerminalParams {
   sessionId: string;
@@ -32,7 +33,7 @@ function endNotice(s: TermSession): string | null {
 
 // A view onto a hub-owned PTY. Mounting attaches (snapshot, then live stream);
 // unmounting only detaches — the process keeps running in the hub.
-export function TerminalPane({ params, api }: IDockviewPanelProps<TerminalParams>) {
+export function TerminalPane({ params, api, containerApi }: IDockviewPanelProps<TerminalParams>) {
   const host = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -136,5 +137,16 @@ export function TerminalPane({ params, api }: IDockviewPanelProps<TerminalParams
     };
   }, [params.sessionId, api]);
 
-  return <div className="term-host" ref={host} />;
+  return (
+    <div className="term-wrap">
+      <div className="term-host" ref={host} />
+      <button
+        className="earlier"
+        title="Browse this session's full saved output"
+        onClick={() => openHistory(containerApi, { sessionId: params.sessionId })}
+      >
+        Earlier output
+      </button>
+    </div>
+  );
 }

@@ -154,7 +154,7 @@ custom harnesses → local-model harness → remote agents.
 | M1 ✅ | Terminals | Hub-owned PTYs in dockable panes; survive UI restart; layout saved per project |
 | M2 ✅ | Projects | Project CRUD, sidebar, per-project layouts & sessions |
 | M3 ✅ | Claude Code | Launch/resume in pane; hooks → live status; transcript import |
-| M4 | History | FTS search across sessions/events; scrollback replay |
+| M4 ✅ | History | FTS search across sessions/events; scrollback replay |
 | M5 | Ideas | Idea board, agent-assisted spec drafting, promote to project |
 | M6 | Changelog | Git watcher + session summaries per project |
 | M7 | Errors | Ingest, fingerprint, group, alert |

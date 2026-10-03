@@ -22,6 +22,11 @@ live in `~/Library/Application Support/Workbench/`.
   `--settings` for that session only — global `~/.claude/settings.json` is
   never modified. **Claude history** lists past conversations for the
   project's folder; click one to resume it.
+- Search: ⌘⇧F searches terminal output, agent activity and every Claude
+  conversation under `~/.claude/projects` (this project or all). Terminal
+  output becomes searchable when its chunk closes (exit, 30 s quiet, or 256 KB).
+- History viewer: **Earlier output** (hover a pane) pages through a session's
+  full saved output; search hits open it at the matching part.
 - Throwaway data dir: `WORKBENCH_DATA_DIR=/some/tmp npm run dev`
 
 ## Layout

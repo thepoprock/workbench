@@ -80,6 +80,28 @@ export interface ClaudeTranscript {
   bytes: number;
 }
 
+export type HitSource = 'agent' | 'terminal' | 'transcript';
+
+export interface SearchHit {
+  source: HitSource;
+  projectId: string | null; // null: a transcript from a folder that isn't a project
+  sessionId: string | null; // workbench session (agent / terminal hits)
+  transcriptId: string | null; // Claude session id (transcript hits)
+  seq: number | null; // scrollback chunk (terminal hits)
+  ts: number | null;
+  title: string; // session or conversation title
+  where: string; // cwd / project name
+  snippet: string; // matched text, with \u0001…\u0002 around matches
+}
+
+export interface ScrollbackChunk {
+  seq: number;
+  byteStart: number;
+  byteEnd: number;
+  tsStart: number;
+  tsEnd: number;
+}
+
 type Empty = Record<string, never>;
 
 // Method name → params/result. Add methods here; both sides are typed off it.
@@ -105,6 +127,12 @@ export interface Methods {
   // Agents (Claude Code). Run in a hub-owned PTY like terminals; all term.* apply.
   'agent.start': { params: { projectId: string; resume?: string; cols: number; rows: number }; result: TermSession };
   'agent.history': { params: { projectId: string }; result: ClaudeTranscript[] };
+
+  // History. Search spans agent events, terminal output and Claude transcripts.
+  'history.search': { params: { query: string; projectId?: string; limit?: number }; result: SearchHit[] };
+  // Full saved output of a session, paged by chunk (the last may still be growing).
+  'scrollback.chunks': { params: { sessionId: string }; result: { session: TermSession; chunks: ScrollbackChunk[] } };
+  'scrollback.read': { params: { sessionId: string; seq: number }; result: string };
 
   // Dock layout per project (opaque dockview JSON).
   'layout.get': { params: { projectId: string }; result: unknown | null };

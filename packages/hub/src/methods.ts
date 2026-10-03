@@ -5,6 +5,7 @@ import { PROTOCOL_VERSION } from '@workbench/shared';
 import { schemaVersion, type DB } from './db/index.ts';
 import { reply, type Client, type Dispatch } from './server.ts';
 import type { ClaudeHarness } from './claude.ts';
+import type { History } from './history.ts';
 import type { Terminals } from './terminals.ts';
 
 type Handler<M extends Method> = (params: Methods[M]['params'], client: Client) => unknown;
@@ -34,6 +35,7 @@ export function makeDispatch(
   db: DB,
   terms: Terminals,
   claude: ClaudeHarness,
+  history: History,
   info: Omit<HubInfo, 'schemaVersion' | 'protocol'>,
 ): Dispatch {
   const getProject = (id: string): ProjectRow => {
@@ -123,6 +125,10 @@ export function makeDispatch(
       const root = getProject(projectId).root_path;
       return root ? claude.history(root) : [];
     },
+
+    'history.search': ({ query, projectId, limit }) => history.search(query, projectId, limit),
+    'scrollback.chunks': ({ sessionId }) => ({ session: terms.info(sessionId), chunks: terms.chunks(sessionId) }),
+    'scrollback.read': ({ sessionId, seq }) => terms.readChunk(sessionId, seq),
 
     'layout.get': ({ projectId }) => {
       const row = db.prepare("SELECT dock FROM layouts WHERE project_id = ? AND name = 'current'").get(projectId) as

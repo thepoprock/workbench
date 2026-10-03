@@ -129,4 +129,21 @@ export const migrations: string[] = [
 
   // 2 — terminal exit codes
   `ALTER TABLE sessions ADD COLUMN exit_code INTEGER;`,
+
+  // 3 — history search: terminal output and Claude transcripts
+  `
+  -- ANSI-stripped text of each closed scrollback chunk.
+  CREATE VIRTUAL TABLE scrollback_fts USING fts5(text, session_id UNINDEXED, seq UNINDEXED);
+
+  -- Incremental transcript indexing: how far into each .jsonl we have read.
+  CREATE TABLE transcript_files (
+    path        TEXT PRIMARY KEY,
+    transcript_id TEXT NOT NULL,
+    cwd         TEXT,
+    title       TEXT,
+    offset      INTEGER NOT NULL DEFAULT 0,
+    updated_at  INTEGER NOT NULL
+  );
+  CREATE VIRTUAL TABLE transcript_fts USING fts5(text, transcript_id UNINDEXED, role UNINDEXED, ts UNINDEXED);
+  `,
 ];

@@ -36,3 +36,28 @@ export function Tab({ api, params }: IDockviewPanelHeaderProps<TerminalParams>) 
     </div>
   );
 }
+
+// Viewer tabs close without side effects.
+export function HistoryTab({ api }: IDockviewPanelHeaderProps) {
+  const [title, setTitle] = useState(api.title ?? '');
+  useEffect(() => {
+    const d = api.onDidTitleChange((e) => setTitle(e.title));
+    return () => d.dispose();
+  }, [api]);
+  return (
+    <div className="tab" title={title} onMouseDown={(e) => e.button === 1 && api.close()}>
+      <span className="tab-title muted-title">{title}</span>
+      <button
+        className="tab-close"
+        onMouseDown={(e) => e.stopPropagation()}
+        onClick={(e) => {
+          e.stopPropagation();
+          api.close();
+        }}
+        aria-label="Close history"
+      >
+        ×
+      </button>
+    </div>
+  );
+}

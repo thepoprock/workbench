@@ -3,11 +3,12 @@ import { DockviewReact, themeDark, type DockviewApi, type DockviewReadyEvent } f
 import 'dockview-react/dist/styles/dockview.css';
 import type { Project } from '@workbench/shared';
 import { hub } from './hub.ts';
-import { Tab } from './Tab.tsx';
+import { HistoryTab, Tab } from './Tab.tsx';
+import { HistoryPane } from './HistoryPane.tsx';
 import { TerminalPane } from './TerminalPane.tsx';
 
-const components = { terminal: TerminalPane };
-const tabComponents = { terminal: Tab };
+const components = { terminal: TerminalPane, history: HistoryPane };
+const tabComponents = { terminal: Tab, history: HistoryTab };
 const SAVE_DEBOUNCE_MS = 400;
 
 function Empty() {
@@ -58,19 +59,4 @@ export function Workspace({ project, onApi }: { project: Project; onApi: (api: D
       onReady={(e) => void onReady(e)}
     />
   );
-}
-
-export function openTerminal(api: DockviewApi, sessionId: string, title: string): void {
-  const existing = api.getPanel(sessionId);
-  if (existing) {
-    existing.api.setActive();
-    return;
-  }
-  api.addPanel({
-    id: sessionId,
-    component: 'terminal',
-    tabComponent: 'terminal',
-    title,
-    params: { sessionId },
-  });
 }
