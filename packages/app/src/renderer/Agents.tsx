@@ -23,7 +23,7 @@ interface Props {
   sessions: TermSession[]; // this project's agent sessions
   canOpen: boolean;
   onOpen: (s: TermSession) => void;
-  onStart: (resume?: string) => void;
+  onStart: (resume?: string, harnessId?: string) => void;
 }
 
 export function Agents({ project, sessions, canOpen, onOpen, onStart }: Props) {
@@ -44,13 +44,25 @@ export function Agents({ project, sessions, canOpen, onOpen, onStart }: Props) {
     };
   }, [showHistory, project.id, project.rootPath, endedCount]);
 
+  // One enabled harness: start it. Several: let the user pick (default first).
+  const pickHarness = async () => {
+    const enabled = (await hub.call('harness.list', {})).filter((h) => h.enabled);
+    if (enabled.length <= 1) return onStart(undefined, enabled[0]?.id);
+    const def = project.defaultHarnessId ?? 'claude-code';
+    enabled.sort((a, b) => Number(b.id === def) - Number(a.id === def));
+    const choice = await window.workbench.menu(
+      enabled.map((h) => ({ id: h.id, label: `${h.name}${h.id === def ? '  (default)' : ''}` })),
+    );
+    if (choice) onStart(undefined, choice);
+  };
+
   const openIds = new Set(sessions.filter((s) => s.status === 'running').map((s) => s.agent?.externalId));
 
   return (
     <>
       <div className="section-label with-action">
         Agents
-        <button onClick={() => onStart()} title="New Claude Code session (⌘⇧A)" disabled={!canOpen}>
+        <button onClick={() => void pickHarness()} title="New agent session (⌘⇧A starts the project default)" disabled={!canOpen}>
           +
         </button>
       </div>

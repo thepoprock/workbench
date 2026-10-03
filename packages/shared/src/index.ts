@@ -33,6 +33,7 @@ export interface Project {
   id: string;
   name: string;
   rootPath: string | null;
+  defaultHarnessId: string | null; // what ⌘⇧A starts; null = Claude Code
   createdAt: number;
   archived: boolean;
 }
@@ -145,6 +146,25 @@ export interface ErrorRule {
   notify: boolean; // alert on new / regressed errors
 }
 
+export type HarnessType = 'claude-code' | 'agent-sdk' | 'local-model' | 'custom';
+
+// An agent program Workbench can run in a pane. config by type:
+//   local-model: baseUrl, model, apiKey?   agent-sdk: script?, model?   custom: command
+export interface Harness {
+  id: string;
+  type: HarnessType;
+  name: string;
+  enabled: boolean;
+  builtin: boolean; // Claude Code: can't be deleted or disabled
+  config: Record<string, string>;
+}
+
+export interface ModelServer {
+  name: string;
+  baseUrl: string;
+  models: string[];
+}
+
 export type HitSource = 'agent' | 'terminal' | 'transcript' | 'commit' | 'error';
 
 export interface SearchHit {
@@ -175,7 +195,10 @@ export interface Methods {
   'hub.ping': { params: Empty; result: { now: number } };
   'project.list': { params: { includeArchived?: boolean }; result: Project[] };
   'project.create': { params: { name: string; rootPath?: string }; result: Project };
-  'project.update': { params: { id: string; name?: string; rootPath?: string | null }; result: Project };
+  'project.update': {
+    params: { id: string; name?: string; rootPath?: string | null; defaultHarnessId?: string | null };
+    result: Project;
+  };
   // Refused while the project has running terminals.
   'project.archive': { params: { id: string; archived: boolean }; result: Project };
 
@@ -191,7 +214,16 @@ export interface Methods {
   'term.kill': { params: { sessionId: string }; result: null };
 
   // Agents (Claude Code). Run in a hub-owned PTY like terminals; all term.* apply.
-  'agent.start': { params: { projectId: string; resume?: string; cols: number; rows: number }; result: TermSession };
+  // harnessId omitted = the project's default (Claude Code unless set). resume: Claude Code only.
+  'agent.start': {
+    params: { projectId: string; harnessId?: string; resume?: string; cols: number; rows: number };
+    result: TermSession;
+  };
+  'harness.list': { params: Empty; result: Harness[] };
+  'harness.save': { params: { harness: Omit<Harness, 'id' | 'builtin'> & { id?: string } }; result: Harness };
+  'harness.delete': { params: { id: string }; result: null };
+  // Probes localhost for Ollama / LM Studio / llama.cpp servers and their models.
+  'harness.detect': { params: Empty; result: ModelServer[] };
   'agent.history': { params: { projectId: string }; result: ClaudeTranscript[] };
 
   // Ideas: a folder of markdown files worked up with Claude, then promoted to a project.

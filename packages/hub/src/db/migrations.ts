@@ -184,4 +184,7 @@ export const migrations: string[] = [
     INSERT INTO events_fts(rowid, text) SELECT new.id, new.text WHERE new.text IS NOT NULL;
   END;
   `,
+
+  // 8 — harnesses are soft-deleted (past sessions keep referencing them)
+  `ALTER TABLE harnesses ADD COLUMN deleted INTEGER NOT NULL DEFAULT 0;`,
 ];

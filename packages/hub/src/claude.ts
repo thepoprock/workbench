@@ -83,13 +83,12 @@ export class ClaudeHarness {
     if (!this.claudePath) throw new Error('claude CLI not found on your login shell PATH');
 
     const id = randomUUID();
-    const token = randomBytes(24).toString('hex');
+    const hookEnv = this.registerHooks(id);
     const externalId = resume ?? randomUUID();
     const shell = process.env.SHELL || '/bin/zsh';
     const claudeArgs = [resume ? '--resume' : '--session-id', externalId, '--settings', HOOK_SETTINGS];
     if (prompt && !resume) claudeArgs.push('--', prompt);
 
-    this.hookTokens.set(id, Buffer.from(token));
     try {
       // Through a login shell so Claude's tools get the same PATH as a terminal.
       return this.terms.create(
@@ -102,19 +101,30 @@ export class ClaudeHarness {
           harness: HARNESS_ID,
           file: shell,
           args: ['-l', '-c', 'exec "$0" "$@"', this.claudePath, ...claudeArgs],
-          env: {
-            WORKBENCH_HOOK_URL: `http://127.0.0.1:${this.hubPort()}/hook/${id}`,
-            WORKBENCH_HOOK_TOKEN: token,
-          },
+          env: hookEnv,
           title: 'Claude',
           agent: { state: 'starting', activity: null, externalId },
         },
         id,
       );
     } catch (err) {
-      this.hookTokens.delete(id);
+      this.unregisterHooks(id);
       throw err;
     }
+  }
+
+  // Hook endpoint + secret for one agent session (any harness).
+  registerHooks(sessionId: string): Record<string, string> {
+    const token = randomBytes(24).toString('hex');
+    this.hookTokens.set(sessionId, Buffer.from(token));
+    return {
+      WORKBENCH_HOOK_URL: `http://127.0.0.1:${this.hubPort()}/hook/${sessionId}`,
+      WORKBENCH_HOOK_TOKEN: token,
+    };
+  }
+
+  unregisterHooks(sessionId: string): void {
+    this.hookTokens.delete(sessionId);
   }
 
   // POST /hook/<session id>. Returns an HTTP status.

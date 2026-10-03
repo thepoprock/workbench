@@ -5,6 +5,7 @@ import { IdeasList } from './IdeasList.tsx';
 import { IdeaView } from './IdeaView.tsx';
 import { loadIdeas, useIdeas } from './ideas.ts';
 import { Agents } from './Agents.tsx';
+import { HarnessManager } from './HarnessManager.tsx';
 import { putSessions, statusClass, useProjectSessions } from './sessions.ts';
 import { hub } from './hub.ts';
 import { Projects } from './Projects.tsx';
@@ -61,6 +62,7 @@ export function App() {
   const [name, setName] = useState('');
   const [error, setError] = useState<string | null>(null);
   const [searching, setSearching] = useState(false);
+  const [managingHarnesses, setManagingHarnesses] = useState(false);
   const [errorCounts, setErrorCounts] = useState<Record<string, number>>({});
   // An action waiting for a given project's dock (opening a search hit in another project).
   const [pending, setPending] = useState<{ projectId: string; run: (dock: DockviewApi) => void } | null>(null);
@@ -118,10 +120,10 @@ export function App() {
 
   // New Claude session, or resume one by its Claude session id.
   const startAgent = useCallback(
-    async (resume?: string) => {
+    async (resume?: string, harnessId?: string) => {
       if (!current || !dock) return;
       try {
-        const s = await hub.call('agent.start', { projectId: current.id, resume, cols: 100, rows: 30 });
+        const s = await hub.call('agent.start', { projectId: current.id, harnessId, resume, cols: 100, rows: 30 });
         putSessions([s]);
         openTerminal(dock, s.id, s.title);
       } catch (err) {
@@ -298,7 +300,7 @@ export function App() {
             sessions={agents}
             canOpen={!!dock && status === 'connected'}
             onOpen={(s) => dock && openTerminal(dock, s.id, s.title)}
-            onStart={(resume) => void startAgent(resume)}
+            onStart={(resume, harnessId) => void startAgent(resume, harnessId)}
           />
         )}
 
@@ -336,6 +338,9 @@ export function App() {
           </div>
         )}
         <div className="spacer" />
+        <button className="footer-link" onClick={() => setManagingHarnesses(true)} disabled={status !== 'connected'}>
+          Harnesses…
+        </button>
         <HubBadge status={status} info={info} />
       </aside>
 
@@ -372,6 +377,7 @@ export function App() {
           </div>
         )}
       </main>
+      {managingHarnesses && <HarnessManager onClose={() => setManagingHarnesses(false)} />}
       {searching && <Search project={current} onOpen={openHit} onClose={() => setSearching(false)} />}
     </div>
   );

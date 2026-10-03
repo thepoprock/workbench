@@ -9,6 +9,7 @@ import type { History } from './history.ts';
 import type { Ideas } from './ideas.ts';
 import type { Changelog } from './changelog.ts';
 import type { Errors } from './errors.ts';
+import type { Harnesses } from './harnesses.ts';
 import type { Terminals } from './terminals.ts';
 
 type Handler<M extends Method> = (params: Methods[M]['params'], client: Client) => unknown;
@@ -18,6 +19,7 @@ interface ProjectRow {
   id: string;
   name: string;
   root_path: string | null;
+  default_harness_id: string | null;
   created_at: number;
   archived: number;
 }
@@ -30,6 +32,7 @@ const toProject = (r: ProjectRow): Project => ({
   id: r.id,
   name: r.name,
   rootPath: r.root_path,
+  defaultHarnessId: r.default_harness_id,
   createdAt: r.created_at,
   archived: r.archived === 1,
 });
@@ -42,6 +45,7 @@ export function makeDispatch(
   ideas: Ideas,
   changelog: Changelog,
   errors: Errors,
+  harnesses: Harnesses,
   info: Omit<HubInfo, 'schemaVersion' | 'protocol'>,
 ): Dispatch {
   const getProject = (id: string): ProjectRow => {
@@ -58,6 +62,7 @@ export function makeDispatch(
       id: randomUUID(),
       name: trimmed,
       root_path: rootPath ?? null,
+      default_harness_id: null,
       created_at: Date.now(),
       archived: 0,
     };
@@ -84,7 +89,7 @@ export function makeDispatch(
 
     'project.create': ({ name, rootPath }) => createProject(name, rootPath),
 
-    'project.update': ({ id, name, rootPath }) => {
+    'project.update': ({ id, name, rootPath, defaultHarnessId }) => {
       const row = getProject(id);
       if (name !== undefined) {
         const trimmed = name.trim();
@@ -95,7 +100,16 @@ export function makeDispatch(
         if (rootPath !== null) checkDir(rootPath);
         row.root_path = rootPath;
       }
-      db.prepare('UPDATE projects SET name = ?, root_path = ? WHERE id = ?').run(row.name, row.root_path, id);
+      if (defaultHarnessId !== undefined) {
+        if (defaultHarnessId !== null) harnesses.get(defaultHarnessId);
+        row.default_harness_id = defaultHarnessId;
+      }
+      db.prepare('UPDATE projects SET name = ?, root_path = ?, default_harness_id = ? WHERE id = ?').run(
+        row.name,
+        row.root_path,
+        row.default_harness_id,
+        id,
+      );
       return toProject(row);
     },
 
@@ -121,15 +135,19 @@ export function makeDispatch(
     'term.resize': ({ sessionId, cols, rows }) => terms.resize(sessionId, cols, rows),
     'term.kill': ({ sessionId }) => terms.kill(sessionId),
 
-    'agent.start': ({ projectId, resume, cols, rows }) => {
+    'agent.start': ({ projectId, harnessId, resume, cols, rows }) => {
       if (resume) {
         const open = terms
           .list(projectId)
           .find((s) => s.status === 'running' && s.agent?.externalId === resume);
         if (open) return open; // already running here: the UI focuses it
       }
-      return claude.start(projectId, undefined, cols, rows, resume);
+      return harnesses.start(projectId, harnessId, cols, rows, resume);
     },
+    'harness.list': () => harnesses.list(),
+    'harness.save': ({ harness }) => harnesses.save(harness),
+    'harness.delete': ({ id }) => harnesses.delete(id),
+    'harness.detect': () => harnesses.detect(),
     'agent.history': ({ projectId }) => {
       const root = getProject(projectId).root_path;
       return root ? claude.history(root) : [];

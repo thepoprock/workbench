@@ -39,6 +39,8 @@ export function Projects({ errorCounts, projects, selected, onSelect, onChanged,
   };
 
   const contextMenu = async (p: Project) => {
+    const harnesses = p.archived ? [] : (await hub.call('harness.list', {})).filter((h) => h.enabled);
+    const def = p.defaultHarnessId ?? 'claude-code';
     const choice = await window.workbench.menu(
       p.archived
         ? [{ id: 'unarchive', label: 'Unarchive' }]
@@ -47,9 +49,16 @@ export function Projects({ errorCounts, projects, selected, onSelect, onChanged,
             { id: 'folder', label: p.rootPath ? 'Change Folder…' : 'Set Folder…' },
             { id: 'reveal', label: 'Show in Finder', enabled: !!p.rootPath },
             { type: 'separator' },
+            ...harnesses.map((h) => ({ id: `harness:${h.id}`, label: `${h.id === def ? '✓ ' : '   '}Default agent: ${h.name}` })),
+            { type: 'separator' },
             { id: 'archive', label: 'Archive' },
           ],
     );
+    if (choice?.startsWith('harness:')) {
+      const id = choice.slice('harness:'.length);
+      await run(() => hub.call('project.update', { id: p.id, defaultHarnessId: id === 'claude-code' ? null : id }));
+      return;
+    }
     switch (choice) {
       case 'rename':
         return startRename(p);

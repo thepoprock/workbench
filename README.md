@@ -40,6 +40,13 @@ live in `~/Library/Application Support/Workbench/`.
   crashes are recorded too. Errors are grouped by a normalised fingerprint;
   new or regressed ones notify (once per 10 min) and the dock badge shows the
   open count. A commit saying `fixes err-xxxxxx` resolves that error.
+- Harnesses (**Harnesses…** in the sidebar): Claude Code (always on), the
+  Agent SDK starter (`packages/runner/sdk-agent.mjs` — copy it to build your
+  own), local models over any OpenAI-compatible server (Ollama, LM Studio,
+  llama.cpp/MLX; "Find local model servers" detects them) and custom
+  commands. **Agents +** offers every enabled harness; a project's right-click
+  menu sets its default (what ⌘⇧A starts). Any program can be a harness by
+  POSTing the events documented in `packages/runner/events.mjs`.
 - History viewer: **Earlier output** (hover a pane) pages through a session's
   full saved output; search hits open it at the matching part.
 - Throwaway data dir: `WORKBENCH_DATA_DIR=/some/tmp npm run dev`
@@ -50,4 +57,5 @@ live in `~/Library/Application Support/Workbench/`.
 packages/shared   wire protocol + shared types
 packages/hub      hub: websocket server, SQLite (node:sqlite) + migrations
 packages/app      Electron app: main (starts/finds hub), preload, React renderer
+packages/runner   agent programs run in panes: local-model agent, Agent SDK starter, event protocol
 ```

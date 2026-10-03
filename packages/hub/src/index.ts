@@ -12,6 +12,7 @@ import { History } from './history.ts';
 import { Ideas } from './ideas.ts';
 import { Changelog } from './changelog.ts';
 import { Errors } from './errors.ts';
+import { Harnesses } from './harnesses.ts';
 
 const VERSION = '0.0.1';
 
@@ -83,7 +84,8 @@ async function main(): Promise<void> {
     .all() as { ref_key: string }[]) {
     changelog.session(r.ref_key.slice('session:'.length));
   }
-  const dispatch = makeDispatch(db, terms, claude, history, ideas, changelog, errors, {
+  const harnesses = new Harnesses(db, terms, claude);
+  const dispatch = makeDispatch(db, terms, claude, history, ideas, changelog, errors, harnesses, {
     version: VERSION,
     pid: process.pid,
     startedAt,
