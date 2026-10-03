@@ -1,0 +1,106 @@
+import { useEffect, useState } from 'react';
+import type { ClaudeTranscript, Project, TermSession } from '@workbench/shared';
+import { hub } from './hub.ts';
+import { statusClass } from './sessions.ts';
+
+const ago = (t: number) => {
+  const s = (Date.now() - t) / 1000;
+  if (s < 60) return 'just now';
+  if (s < 3600) return `${Math.floor(s / 60)}m ago`;
+  if (s < 86400) return `${Math.floor(s / 3600)}h ago`;
+  return `${Math.floor(s / 86400)}d ago`;
+};
+
+const STATE_LABEL: Record<string, string> = {
+  starting: 'Starting…',
+  idle: 'Ready',
+  working: 'Working',
+  waiting: 'Needs you',
+};
+
+interface Props {
+  project: Project;
+  sessions: TermSession[]; // this project's agent sessions
+  canOpen: boolean;
+  onOpen: (s: TermSession) => void;
+  onStart: (resume?: string) => void;
+}
+
+export function Agents({ project, sessions, canOpen, onOpen, onStart }: Props) {
+  const [showHistory, setShowHistory] = useState(false);
+  const [history, setHistory] = useState<ClaudeTranscript[] | null>(null);
+  const endedCount = sessions.filter((s) => s.status !== 'running').length;
+
+  // Reload when opened, and when an agent ends (its transcript just changed).
+  useEffect(() => {
+    if (!showHistory) return;
+    let cancelled = false;
+    hub.call('agent.history', { projectId: project.id }).then(
+      (h) => !cancelled && setHistory(h),
+      () => !cancelled && setHistory([]),
+    );
+    return () => {
+      cancelled = true;
+    };
+  }, [showHistory, project.id, project.rootPath, endedCount]);
+
+  const openIds = new Set(sessions.filter((s) => s.status === 'running').map((s) => s.agent?.externalId));
+
+  return (
+    <>
+      <div className="section-label with-action">
+        Agents
+        <button onClick={() => onStart()} title="New Claude Code session (⌘⇧A)" disabled={!canOpen}>
+          +
+        </button>
+      </div>
+      <ul className="list">
+        {sessions.map((s) => (
+          <li key={s.id}>
+            <button
+              className={`agent-row ${s.status !== 'running' ? 'ended' : ''}`}
+              onClick={() => onOpen(s)}
+              title={s.agent?.activity ?? s.cwd}
+            >
+              <span className={`dot ${statusClass(s)}`} />
+              <span className="agent-text">
+                <span className="agent-title">{s.title}</span>
+                <span className="agent-activity">
+                  {s.status === 'running'
+                    ? (s.agent?.activity ?? STATE_LABEL[s.agent?.state ?? 'idle'])
+                    : s.status === 'lost'
+                      ? 'Ended (hub restarted)'
+                      : 'Ended'}
+                </span>
+              </span>
+            </button>
+          </li>
+        ))}
+        {sessions.length === 0 && <li className="empty">None</li>}
+      </ul>
+
+      <button className="disclosure" onClick={() => setShowHistory((v) => !v)}>
+        {showHistory ? '▾' : '▸'} Claude history
+      </button>
+      {showHistory && (
+        <ul className="list history">
+          {!project.rootPath && <li className="empty">Set a project folder to see its Claude history.</li>}
+          {project.rootPath && history === null && <li className="empty">Loading…</li>}
+          {project.rootPath && history?.length === 0 && <li className="empty">No past sessions in this folder.</li>}
+          {history?.map((h) => (
+            <li key={h.id}>
+              <button onClick={() => onStart(h.id)} disabled={!canOpen} title={h.firstPrompt ?? h.title}>
+                <span className="agent-text">
+                  <span className="agent-title">
+                    {openIds.has(h.id) && <span className="dot agent-idle" />} {h.title}
+                  </span>
+                  <span className="agent-activity">{ago(h.updatedAt)} · resume</span>
+                </span>
+              </button>
+            </li>
+          ))}
+        </ul>
+      )}
+    </>
+  );
+}

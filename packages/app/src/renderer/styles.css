@@ -80,11 +80,26 @@ body {
 .hub-badge { display: flex; align-items: center; gap: 6px; font-size: 11px; padding: 6px 8px; color: var(--muted); }
 .hub-badge > span { white-space: nowrap; }
 .hub-badge .muted { overflow: hidden; text-overflow: ellipsis; min-width: 0; }
-.dot { width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0; }
+.dot { display: inline-block; width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0; }
 .dot.connected { background: var(--ok); }
 .dot.connecting { background: var(--warn); }
 .dot.disconnected { background: var(--bad); }
 .dot.ended { background: var(--muted); opacity: .5; }
+.dot.agent-starting { background: var(--muted); }
+.dot.agent-idle { background: var(--ok); }
+.dot.agent-working { background: var(--accent); animation: pulse 1.2s ease-in-out infinite; }
+.dot.agent-waiting { background: var(--warn); box-shadow: 0 0 0 3px rgba(210, 153, 34, .25); }
+@keyframes pulse { 50% { opacity: .35; } }
+@media (prefers-reduced-motion: reduce) { .dot.agent-working { animation: none; } }
+
+.agent-row { align-items: flex-start !important; }
+.agent-row .dot { margin-top: 5px; }
+.agent-text { display: flex; flex-direction: column; min-width: 0; }
+.agent-title, .agent-activity { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.agent-activity { font-size: 11px; color: var(--muted); }
+.agent-title .dot { margin-right: 4px; vertical-align: 1px; }
+.list.history { max-height: 40vh; }
+.list button:disabled { opacity: .5; }
 
 .workspace { flex: 1; display: flex; flex-direction: column; min-width: 0; }
 .titlebar {
@@ -117,7 +132,7 @@ body {
   --dv-inactivegroup-hiddenpanel-tab-color: var(--muted);
   --dv-tab-divider-color: var(--border);
 }
-.tab { display: flex; align-items: center; gap: 6px; height: 100%; padding: 0 4px 0 10px; max-width: 220px; }
+.tab { display: flex; align-items: center; gap: 6px; min-width: 0; height: 100%; padding: 0 4px 0 10px; max-width: 220px; }
 .tab-title { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .tab-close {
   background: none; border: 0; color: var(--muted); font-size: 14px; line-height: 1;

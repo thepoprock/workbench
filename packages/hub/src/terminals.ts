@@ -5,7 +5,7 @@ import { join } from 'node:path';
 import * as pty from 'node-pty';
 import headless from '@xterm/headless';
 import serialize from '@xterm/addon-serialize';
-import type { TermSession, TermStatus } from '@workbench/shared';
+import type { AgentInfo, SessionKind, TermSession, TermStatus } from '@workbench/shared';
 import type { DB } from './db/index.ts';
 import { scrollbackDir } from './paths.ts';
 import type { Client } from './server.ts';
@@ -15,9 +15,23 @@ const CHUNK_BYTES = 256 * 1024; // scrollback_chunks granularity on disk
 const DISK_TAIL_BYTES = 512 * 1024; // snapshot for sessions from a previous hub run
 const FLUSH_MS = 4; // batch PTY output before pushing
 
+// What to run in the PTY. Default (no spec) is the user's login shell.
+export interface SpawnSpec {
+  kind: SessionKind;
+  harness: string | null;
+  file: string;
+  args: string[];
+  env?: Record<string, string>;
+  title: string;
+  agent?: AgentInfo;
+}
+
 interface SessionRow {
   id: string;
   project_id: string;
+  kind: SessionKind;
+  harness_id: string | null;
+  external_id: string | null;
   title: string | null;
   cwd: string;
   status: TermStatus;
@@ -41,12 +55,21 @@ interface Live {
 }
 
 const logPath = (id: string) => join(scrollbackDir, `${id}.log`);
+const SESSION_COLS = 'id, project_id, kind, harness_id, external_id, title, cwd, status, exit_code, started_at, ended_at';
 
-// Shell env: the hub's env minus what leaks in from Electron/npm dev launches.
+// Runtime markers a parent Claude Code session sets. If inherited, a claude
+// started in our PTY believes it is a child session and stops saving its
+// transcript (seen live: "Transcript saving is off — inherited
+// CLAUDE_CODE_CHILD_SESSION marker"). User config vars are left alone.
+const CLAUDE_MARKERS = /^(CLAUDECODE|CLAUDE_PID|CLAUDE_EFFORT|CLAUDE_CODE_(ENTRYPOINT|EXECPATH|SESSION_.*|MESSAGING_.*|CHILD_.*))$/;
+
+// Shell env: the hub's env minus what leaks in from Electron/npm dev launches
+// and from a parent Claude Code session.
 function shellEnv(): Record<string, string> {
   const env: Record<string, string> = {};
   for (const [k, v] of Object.entries(process.env)) {
     if (v === undefined || k.startsWith('ELECTRON_') || k.startsWith('npm_') || k === 'NODE_OPTIONS') continue;
+    if (CLAUDE_MARKERS.test(k)) continue;
     env[k] = v;
   }
   env.TERM = 'xterm-256color';
@@ -63,12 +86,19 @@ export class Terminals {
     private broadcast: (session: TermSession) => void,
   ) {
     // PTYs die with the hub; anything still marked running is from a previous run.
-    db.prepare(
-      "UPDATE sessions SET status = 'lost', ended_at = ? WHERE kind = 'terminal' AND status = 'running'",
-    ).run(Date.now());
+    db.prepare("UPDATE sessions SET status = 'lost', ended_at = ? WHERE status = 'running'").run(Date.now());
   }
 
-  create(projectId: string, cwd: string | undefined, cols: number, rows: number): TermSession {
+  // The session id is chosen by the caller when it must be known before spawn
+  // (agents bake it into their hook URL).
+  create(
+    projectId: string,
+    cwd: string | undefined,
+    cols: number,
+    rows: number,
+    spec?: SpawnSpec,
+    id: string = randomUUID(),
+  ): TermSession {
     const project = this.db.prepare('SELECT root_path FROM projects WHERE id = ?').get(projectId) as
       | { root_path: string | null }
       | undefined;
@@ -77,12 +107,28 @@ export class Terminals {
     if (!existsSync(dir)) throw new Error(`directory does not exist: ${dir}`);
 
     const shell = process.env.SHELL || '/bin/zsh';
-    const proc = pty.spawn(shell, ['-l'], { name: 'xterm-256color', cols, rows, cwd: dir, env: shellEnv() });
+    const run: SpawnSpec = spec ?? {
+      kind: 'terminal',
+      harness: null,
+      file: shell,
+      args: ['-l'],
+      title: shell.split('/').pop() ?? 'shell',
+    };
+    const proc = pty.spawn(run.file, run.args, {
+      name: 'xterm-256color',
+      cols,
+      rows,
+      cwd: dir,
+      env: { ...shellEnv(), ...run.env },
+    });
 
     const info: TermSession = {
-      id: randomUUID(),
+      id,
       projectId,
-      title: shell.split('/').pop() ?? 'shell',
+      kind: run.kind,
+      harness: run.harness,
+      agent: run.agent ?? null,
+      title: run.title,
       cwd: dir,
       status: 'running',
       exitCode: null,
@@ -91,10 +137,10 @@ export class Terminals {
     };
     this.db
       .prepare(
-        "INSERT INTO sessions (id, project_id, kind, status, cwd, title, started_at) VALUES (?, ?, 'terminal', 'running', ?, ?, ?)",
+        "INSERT INTO sessions (id, project_id, harness_id, kind, status, cwd, title, external_id, started_at) VALUES (?, ?, ?, ?, 'running', ?, ?, ?, ?)",
       )
-      .run(info.id, projectId, dir, info.title, info.startedAt);
-    this.event(info, 'session.start', { shell, cwd: dir, pid: proc.pid });
+      .run(info.id, projectId, run.harness, run.kind, dir, info.title, info.agent?.externalId ?? null, info.startedAt);
+    this.event(info, 'session.start', { file: run.file, args: run.args, cwd: dir, pid: proc.pid });
 
     const screen = new headless.Terminal({ cols, rows, scrollback: SCROLLBACK_LINES, allowProposedApi: true });
     const serializer = new serialize.SerializeAddon();
@@ -126,11 +172,33 @@ export class Terminals {
     return info;
   }
 
+  get(sessionId: string): TermSession | null {
+    return this.live.get(sessionId)?.info ?? null;
+  }
+
+  // Merge into a live agent's state and tell clients. Persists the harness id.
+  updateAgent(sessionId: string, patch: Partial<AgentInfo>): void {
+    const s = this.live.get(sessionId);
+    if (!s?.info.agent) return;
+    const before = JSON.stringify(s.info.agent);
+    Object.assign(s.info.agent, patch);
+    if (JSON.stringify(s.info.agent) === before) return;
+    if (patch.externalId) {
+      this.db.prepare('UPDATE sessions SET external_id = ? WHERE id = ?').run(patch.externalId, sessionId);
+    }
+    this.broadcast(s.info);
+  }
+
+  recordEvent(sessionId: string, kind: string, payload: object, text?: string): void {
+    const info = this.live.get(sessionId)?.info;
+    if (info) this.event(info, kind, payload, text);
+  }
+
   list(projectId: string): TermSession[] {
     const rows = this.db
       .prepare(
-        `SELECT id, project_id, title, cwd, status, exit_code, started_at, ended_at FROM sessions
-         WHERE kind = 'terminal' AND project_id = ? AND (status = 'running' OR ended_at > ?)
+        `SELECT ${SESSION_COLS} FROM sessions
+         WHERE project_id = ? AND (status = 'running' OR ended_at > ?)
          ORDER BY started_at`,
       )
       .all(projectId, Date.now() - 24 * 3600_000) as unknown as SessionRow[];
@@ -146,9 +214,7 @@ export class Terminals {
     const s = this.live.get(sessionId);
     if (!s) {
       const row = this.db
-        .prepare(
-          "SELECT id, project_id, title, cwd, status, exit_code, started_at, ended_at FROM sessions WHERE id = ? AND kind = 'terminal'",
-        )
+        .prepare(`SELECT ${SESSION_COLS} FROM sessions WHERE id = ?`)
         .get(sessionId) as SessionRow | undefined;
       if (!row) throw new Error('unknown session');
       return { session: toSession(row), snapshot: readTail(logPath(sessionId)), release: () => {} };
@@ -244,6 +310,7 @@ export class Terminals {
     s.proc = null;
     s.info.status = 'exited';
     s.info.exitCode = exitCode;
+    if (s.info.agent) s.info.agent.activity = null;
     s.info.endedAt = Date.now();
     this.db
       .prepare("UPDATE sessions SET status = 'exited', exit_code = ?, ended_at = ? WHERE id = ?")
@@ -252,10 +319,10 @@ export class Terminals {
     this.broadcast(s.info);
   }
 
-  private event(info: TermSession, kind: string, payload: object): void {
+  private event(info: TermSession, kind: string, payload: object, text?: string): void {
     this.db
-      .prepare('INSERT INTO events (ts, project_id, session_id, kind, payload) VALUES (?, ?, ?, ?, ?)')
-      .run(Date.now(), info.projectId, info.id, kind, JSON.stringify(payload));
+      .prepare('INSERT INTO events (ts, project_id, session_id, kind, payload, text) VALUES (?, ?, ?, ?, ?, ?)')
+      .run(Date.now(), info.projectId, info.id, kind, JSON.stringify(payload), text ?? null);
   }
 }
 
@@ -263,6 +330,9 @@ function toSession(r: SessionRow): TermSession {
   return {
     id: r.id,
     projectId: r.project_id,
+    kind: r.kind,
+    harness: r.harness_id,
+    agent: r.kind === 'agent' ? { state: 'idle', activity: null, externalId: r.external_id } : null,
     title: r.title ?? 'shell',
     cwd: r.cwd,
     status: r.status,

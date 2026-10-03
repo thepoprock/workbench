@@ -17,6 +17,11 @@ live in `~/Library/Application Support/Workbench/`.
 - Stop the hub: `pkill -f hub/src/index.ts` — this ends every terminal it owns.
 - Terminals: ⌘T or **+** opens one in the selected project. Closing a tab kills
   its shell; switching projects or quitting the app only detaches.
+- Claude Code: ⌘⇧A or **Agents +** starts `claude` in a pane for the project.
+  Live status (working / needs you / ready) comes from hooks injected with
+  `--settings` for that session only — global `~/.claude/settings.json` is
+  never modified. **Claude history** lists past conversations for the
+  project's folder; click one to resume it.
 - Throwaway data dir: `WORKBENCH_DATA_DIR=/some/tmp npm run dev`
 
 ## Layout

@@ -2,11 +2,13 @@ import { useEffect, useState } from 'react';
 import type { IDockviewPanelHeaderProps } from 'dockview-react';
 import type { TerminalParams } from './TerminalPane.tsx';
 import { hub } from './hub.ts';
+import { statusClass, useSession } from './sessions.ts';
 
-// Closing a terminal tab is the one explicit "I'm done" — it kills the shell.
+// Closing a tab is the one explicit "I'm done" — it kills the shell or agent.
 // Switching projects or quitting the app only detaches.
 export function Tab({ api, params }: IDockviewPanelHeaderProps<TerminalParams>) {
   const [title, setTitle] = useState(api.title ?? '');
+  const session = useSession(params.sessionId);
   useEffect(() => {
     const d = api.onDidTitleChange((e) => setTitle(e.title));
     return () => d.dispose();
@@ -26,6 +28,7 @@ export function Tab({ api, params }: IDockviewPanelHeaderProps<TerminalParams>) 
       }}
       title={title}
     >
+      {session?.kind === 'agent' && <span className={`dot ${statusClass(session)}`} />}
       <span className="tab-title">{title}</span>
       <button className="tab-close" onMouseDown={(e) => e.stopPropagation()} onClick={close} aria-label="Close terminal">
         ×

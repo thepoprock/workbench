@@ -7,6 +7,7 @@ import { makeDispatch } from './methods.ts';
 import { dataDir, dbPath, discoveryPath, ensureDirs } from './paths.ts';
 import { startServer, type Server } from './server.ts';
 import { Terminals } from './terminals.ts';
+import { ClaudeHarness, HARNESS_ID } from './claude.ts';
 
 const VERSION = '0.0.1';
 
@@ -52,7 +53,11 @@ async function main(): Promise<void> {
   // Terminals broadcast through the server, which starts after them.
   let server: Server | null = null;
   const terms = new Terminals(db, (session) => server?.broadcast({ event: 'term.update', data: session }));
-  const dispatch = makeDispatch(db, terms, {
+  db.prepare(
+    "INSERT OR IGNORE INTO harnesses (id, type, name, created_at) VALUES (?, 'claude-code', 'Claude Code', ?)",
+  ).run(HARNESS_ID, Date.now());
+  const claude = new ClaudeHarness(terms, () => server?.port ?? 0);
+  const dispatch = makeDispatch(db, terms, claude, {
     version: VERSION,
     pid: process.pid,
     startedAt,
@@ -61,7 +66,12 @@ async function main(): Promise<void> {
   });
 
   const token = randomBytes(32).toString('hex');
-  server = await startServer(dispatch, token, (client) => terms.dropClient(client));
+  server = await startServer(
+    dispatch,
+    token,
+    (client) => terms.dropClient(client),
+    (path, headers, body) => claude.hook(path, headers['x-workbench-hook'] as string | undefined, body),
+  );
   const discovery: HubDiscovery = { port: server.port, token, pid: process.pid };
   writeFileSync(discoveryPath, JSON.stringify(discovery), { mode: 0o600 });
   log(`listening on 127.0.0.1:${server.port} (pid ${process.pid}, data ${dataDir})`);

@@ -4,6 +4,7 @@ import type { HubInfo, Method, Methods, Project, Request } from '@workbench/shar
 import { PROTOCOL_VERSION } from '@workbench/shared';
 import { schemaVersion, type DB } from './db/index.ts';
 import { reply, type Client, type Dispatch } from './server.ts';
+import type { ClaudeHarness } from './claude.ts';
 import type { Terminals } from './terminals.ts';
 
 type Handler<M extends Method> = (params: Methods[M]['params'], client: Client) => unknown;
@@ -29,7 +30,12 @@ const toProject = (r: ProjectRow): Project => ({
   archived: r.archived === 1,
 });
 
-export function makeDispatch(db: DB, terms: Terminals, info: Omit<HubInfo, 'schemaVersion' | 'protocol'>): Dispatch {
+export function makeDispatch(
+  db: DB,
+  terms: Terminals,
+  claude: ClaudeHarness,
+  info: Omit<HubInfo, 'schemaVersion' | 'protocol'>,
+): Dispatch {
   const getProject = (id: string): ProjectRow => {
     const row = db.prepare('SELECT * FROM projects WHERE id = ?').get(id) as ProjectRow | undefined;
     if (!row) throw new Error('unknown project');
@@ -103,6 +109,20 @@ export function makeDispatch(db: DB, terms: Terminals, info: Omit<HubInfo, 'sche
     'term.input': ({ sessionId, data }) => terms.input(sessionId, data),
     'term.resize': ({ sessionId, cols, rows }) => terms.resize(sessionId, cols, rows),
     'term.kill': ({ sessionId }) => terms.kill(sessionId),
+
+    'agent.start': ({ projectId, resume, cols, rows }) => {
+      if (resume) {
+        const open = terms
+          .list(projectId)
+          .find((s) => s.status === 'running' && s.agent?.externalId === resume);
+        if (open) return open; // already running here: the UI focuses it
+      }
+      return claude.start(projectId, undefined, cols, rows, resume);
+    },
+    'agent.history': ({ projectId }) => {
+      const root = getProject(projectId).root_path;
+      return root ? claude.history(root) : [];
+    },
 
     'layout.get': ({ projectId }) => {
       const row = db.prepare("SELECT dock FROM layouts WHERE project_id = ? AND name = 'current'").get(projectId) as

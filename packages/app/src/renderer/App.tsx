@@ -1,6 +1,8 @@
 import { useCallback, useEffect, useState, useSyncExternalStore, type FormEvent } from 'react';
 import type { DockviewApi } from 'dockview-react';
 import type { HubInfo, Project, TermSession } from '@workbench/shared';
+import { Agents } from './Agents.tsx';
+import { putSessions, statusClass, useProjectSessions } from './sessions.ts';
 import { hub } from './hub.ts';
 import { Projects } from './Projects.tsx';
 import { openTerminal, Workspace } from './Workspace.tsx';
@@ -35,7 +37,6 @@ export function App() {
   const [info, setInfo] = useState<HubInfo | null>(null);
   const [projects, setProjects] = useState<Project[]>([]);
   const [selected, setSelectedState] = useState<string | null>(loadSelected);
-  const [sessions, setSessions] = useState<TermSession[]>([]);
   const [dock, setDock] = useState<DockviewApi | null>(null);
   const [name, setName] = useState('');
   const [error, setError] = useState<string | null>(null);
@@ -60,46 +61,54 @@ export function App() {
     if (status === 'connected') void refresh();
   }, [status, refresh]);
 
-  // Sessions for the selected project: load, then follow term.update pushes.
+  // Sessions for the selected project; the store follows term.update pushes.
+  const sessions = useProjectSessions(current?.id ?? null);
   useEffect(() => {
-    if (!current || status !== 'connected') return setSessions([]);
-    let cancelled = false;
-    hub.call('term.list', { projectId: current.id }).then(
-      (list) => !cancelled && setSessions(list),
-      (err) => setError((err as Error).message),
-    );
-    const off = hub.onPush((p) => {
-      if (p.event !== 'term.update' || p.data.projectId !== current.id) return;
-      const s = p.data;
-      setSessions((prev) => (prev.some((x) => x.id === s.id) ? prev.map((x) => (x.id === s.id ? s : x)) : [...prev, s]));
-    });
-    return () => {
-      cancelled = true;
-      off();
-    };
+    if (!current || status !== 'connected') return;
+    hub.call('term.list', { projectId: current.id }).then(putSessions, (err) => setError((err as Error).message));
   }, [current?.id, status]);
 
   const newTerminal = useCallback(async () => {
     if (!current || !dock) return;
     try {
       const s = await hub.call('term.create', { projectId: current.id, cols: 80, rows: 24 });
-      setSessions((prev) => [...prev, s]);
+      putSessions([s]);
       openTerminal(dock, s.id, s.title);
     } catch (err) {
       setError((err as Error).message);
     }
   }, [current, dock]);
 
+  // New Claude session, or resume one by its Claude session id.
+  const startAgent = useCallback(
+    async (resume?: string) => {
+      if (!current || !dock) return;
+      try {
+        const s = await hub.call('agent.start', { projectId: current.id, resume, cols: 100, rows: 30 });
+        putSessions([s]);
+        openTerminal(dock, s.id, s.title);
+      } catch (err) {
+        setError((err as Error).message);
+      }
+    },
+    [current, dock],
+  );
+
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
-      if (e.metaKey && !e.shiftKey && !e.altKey && e.key === 't') {
+      if (!e.metaKey || e.altKey) return;
+      const k = e.key.toLowerCase();
+      if (!e.shiftKey && k === 't') {
         e.preventDefault();
         void newTerminal();
+      } else if (e.shiftKey && k === 'a') {
+        e.preventDefault();
+        void startAgent();
       }
     };
     window.addEventListener('keydown', onKey, true);
     return () => window.removeEventListener('keydown', onKey, true);
-  }, [newTerminal]);
+  }, [newTerminal, startAgent]);
 
   const create = async (rootPath?: string) => {
     const projectName = name.trim() || (rootPath ? basename(rootPath) : '');
@@ -124,8 +133,10 @@ export function App() {
     if (dir) void create(dir);
   };
 
-  const running = sessions.filter((s) => s.status === 'running');
-  const ended = sessions.filter((s) => s.status !== 'running');
+  const terminals = sessions.filter((s) => s.kind === 'terminal');
+  const agents = sessions.filter((s) => s.kind === 'agent');
+  const running = terminals.filter((s) => s.status === 'running');
+  const ended = terminals.filter((s) => s.status !== 'running');
 
   return (
     <div className="shell">
@@ -152,6 +163,16 @@ export function App() {
         </form>
 
         {current && (
+          <Agents
+            project={current}
+            sessions={agents}
+            canOpen={!!dock && status === 'connected'}
+            onOpen={(s) => dock && openTerminal(dock, s.id, s.title)}
+            onStart={(resume) => void startAgent(resume)}
+          />
+        )}
+
+        {current && (
           <>
             <div className="section-label with-action">
               Terminals
@@ -163,7 +184,7 @@ export function App() {
               {running.map((s) => (
                 <li key={s.id}>
                   <button onClick={() => dock && openTerminal(dock, s.id, s.title)} title={s.cwd}>
-                    <span className="dot connected" /> {s.title}
+                    <span className={`dot ${statusClass(s)}`} /> {s.title}
                   </button>
                 </li>
               ))}
@@ -174,7 +195,7 @@ export function App() {
                   </button>
                 </li>
               ))}
-              {sessions.length === 0 && <li className="empty">None</li>}
+              {terminals.length === 0 && <li className="empty">None</li>}
             </ul>
           </>
         )}

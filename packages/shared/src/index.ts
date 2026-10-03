@@ -38,10 +38,24 @@ export interface Project {
 }
 
 export type TermStatus = 'running' | 'exited' | 'lost';
+export type SessionKind = 'terminal' | 'agent';
 
+// Live agent state, driven by harness events (Claude Code hooks).
+export type AgentState = 'starting' | 'working' | 'waiting' | 'idle';
+
+export interface AgentInfo {
+  state: AgentState;
+  activity: string | null; // e.g. "Bash: npm test", "needs permission to use Bash"
+  externalId: string | null; // the harness's own session id (Claude session id)
+}
+
+// A PTY-backed session: a plain shell, or an agent CLI running in a terminal.
 export interface TermSession {
   id: string;
   projectId: string;
+  kind: SessionKind;
+  harness: string | null; // 'claude-code' for agents
+  agent: AgentInfo | null;
   title: string;
   cwd: string;
   status: TermStatus;
@@ -54,6 +68,16 @@ export interface TermSession {
 export interface Pushes {
   'term.data': { sessionId: string; data: string }; // only to attached clients
   'term.update': TermSession; // to everyone: status/title changes
+}
+
+// A past Claude Code conversation, read from ~/.claude/projects/<cwd>/<id>.jsonl.
+export interface ClaudeTranscript {
+  id: string;
+  title: string;
+  firstPrompt: string | null;
+  startedAt: number | null;
+  updatedAt: number;
+  bytes: number;
 }
 
 type Empty = Record<string, never>;
@@ -77,6 +101,10 @@ export interface Methods {
   'term.input': { params: { sessionId: string; data: string }; result: null };
   'term.resize': { params: { sessionId: string; cols: number; rows: number }; result: null };
   'term.kill': { params: { sessionId: string }; result: null };
+
+  // Agents (Claude Code). Run in a hub-owned PTY like terminals; all term.* apply.
+  'agent.start': { params: { projectId: string; resume?: string; cols: number; rows: number }; result: TermSession };
+  'agent.history': { params: { projectId: string }; result: ClaudeTranscript[] };
 
   // Dock layout per project (opaque dockview JSON).
   'layout.get': { params: { projectId: string }; result: unknown | null };
