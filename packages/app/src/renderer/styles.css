@@ -54,6 +54,15 @@ body {
 .list button.active { background: var(--accent-bg); color: var(--accent); }
 .list button.ended { color: var(--muted); }
 .list .empty { color: var(--muted); padding: 6px 8px; }
+.list input.rename {
+  width: 100%; padding: 5px 7px; border-radius: 6px; border: 1px solid var(--accent);
+  background: var(--bg); color: var(--text); font: inherit; outline: none;
+}
+.disclosure {
+  background: none; border: 0; color: var(--muted); font: inherit; font-size: 11px;
+  text-align: left; padding: 6px 8px; cursor: default;
+}
+.disclosure:hover { color: var(--text); }
 
 .new-project { display: flex; gap: 4px; margin-top: 8px; }
 .new-project input {
@@ -83,6 +92,7 @@ body {
   border-bottom: 1px solid var(--border); font-size: 12px;
 }
 .titlebar-name { font-weight: 600; }
+.titlebar-path { margin-left: 6px; }
 .titlebar .muted, .placeholder .muted { color: var(--muted); }
 .drag { -webkit-app-region: drag; }
 .drag button, .drag input { -webkit-app-region: no-drag; }
@@ -120,4 +130,5 @@ body {
 .term-host .xterm { height: 100%; }
 .term-host .xterm-viewport { background-color: var(--bg) !important; }
 .placeholder { margin: auto; text-align: center; color: var(--muted); }
+.dv-watermark-container > .dv-react-part { display: flex; height: 100%; }
 .placeholder h1 { color: var(--text); font-size: 20px; font-weight: 600; margin: 0 0 6px; }

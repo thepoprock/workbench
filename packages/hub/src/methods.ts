@@ -1,4 +1,5 @@
 import { randomUUID } from 'node:crypto';
+import { existsSync, statSync } from 'node:fs';
 import type { HubInfo, Method, Methods, Project, Request } from '@workbench/shared';
 import { PROTOCOL_VERSION } from '@workbench/shared';
 import { schemaVersion, type DB } from './db/index.ts';
@@ -16,6 +17,10 @@ interface ProjectRow {
   archived: number;
 }
 
+function checkDir(path: string): void {
+  if (!existsSync(path) || !statSync(path).isDirectory()) throw new Error(`not a directory: ${path}`);
+}
+
 const toProject = (r: ProjectRow): Project => ({
   id: r.id,
   name: r.name,
@@ -25,19 +30,28 @@ const toProject = (r: ProjectRow): Project => ({
 });
 
 export function makeDispatch(db: DB, terms: Terminals, info: Omit<HubInfo, 'schemaVersion' | 'protocol'>): Dispatch {
+  const getProject = (id: string): ProjectRow => {
+    const row = db.prepare('SELECT * FROM projects WHERE id = ?').get(id) as ProjectRow | undefined;
+    if (!row) throw new Error('unknown project');
+    return row;
+  };
+
   const handlers: Handlers = {
     'hub.info': () => ({ ...info, protocol: PROTOCOL_VERSION, schemaVersion: schemaVersion(db) }),
 
     'hub.ping': () => ({ now: Date.now() }),
 
-    'project.list': () =>
-      (db.prepare('SELECT * FROM projects WHERE archived = 0 ORDER BY name').all() as unknown as ProjectRow[]).map(
-        toProject,
-      ),
+    'project.list': ({ includeArchived }) =>
+      (
+        db
+          .prepare(`SELECT * FROM projects ${includeArchived ? '' : 'WHERE archived = 0'} ORDER BY name COLLATE NOCASE`)
+          .all() as unknown as ProjectRow[]
+      ).map(toProject),
 
     'project.create': ({ name, rootPath }) => {
       const trimmed = name.trim();
       if (!trimmed) throw new Error('project name is required');
+      if (rootPath) checkDir(rootPath);
       const row: ProjectRow = {
         id: randomUUID(),
         name: trimmed,
@@ -51,6 +65,31 @@ export function makeDispatch(db: DB, terms: Terminals, info: Omit<HubInfo, 'sche
         row.root_path,
         row.created_at,
       );
+      return toProject(row);
+    },
+
+    'project.update': ({ id, name, rootPath }) => {
+      const row = getProject(id);
+      if (name !== undefined) {
+        const trimmed = name.trim();
+        if (!trimmed) throw new Error('project name is required');
+        row.name = trimmed;
+      }
+      if (rootPath !== undefined) {
+        if (rootPath !== null) checkDir(rootPath);
+        row.root_path = rootPath;
+      }
+      db.prepare('UPDATE projects SET name = ?, root_path = ? WHERE id = ?').run(row.name, row.root_path, id);
+      return toProject(row);
+    },
+
+    'project.archive': ({ id, archived }) => {
+      const row = getProject(id);
+      if (archived && terms.list(id).some((s) => s.status === 'running')) {
+        throw new Error(`"${row.name}" has running terminals — close them before archiving`);
+      }
+      row.archived = archived ? 1 : 0;
+      db.prepare('UPDATE projects SET archived = ? WHERE id = ?').run(row.archived, id);
       return toProject(row);
     },
 

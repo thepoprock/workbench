@@ -1,10 +1,14 @@
 import { contextBridge, ipcRenderer } from 'electron';
 import type { HubDiscovery } from '@workbench/shared';
 
+export type MenuItem = { id: string; label: string; enabled?: boolean } | { type: 'separator' };
+
 const api = {
   // Ensures a hub is running and returns where/how to reach it.
   connectHub: (): Promise<HubDiscovery> => ipcRenderer.invoke('hub:connect'),
-  pickFolder: (): Promise<string | null> => ipcRenderer.invoke('dialog:pickFolder'),
+  pickFolder: (defaultPath?: string): Promise<string | null> => ipcRenderer.invoke('dialog:pickFolder', defaultPath),
+  menu: (items: MenuItem[]): Promise<string | null> => ipcRenderer.invoke('menu:popup', items),
+  reveal: (path: string): Promise<string> => ipcRenderer.invoke('shell:reveal', path),
 };
 
 export type WorkbenchApi = typeof api;

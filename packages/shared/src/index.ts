@@ -62,8 +62,11 @@ type Empty = Record<string, never>;
 export interface Methods {
   'hub.info': { params: Empty; result: HubInfo };
   'hub.ping': { params: Empty; result: { now: number } };
-  'project.list': { params: Empty; result: Project[] };
+  'project.list': { params: { includeArchived?: boolean }; result: Project[] };
   'project.create': { params: { name: string; rootPath?: string }; result: Project };
+  'project.update': { params: { id: string; name?: string; rootPath?: string | null }; result: Project };
+  // Refused while the project has running terminals.
+  'project.archive': { params: { id: string; archived: boolean }; result: Project };
 
   // Terminals. The hub owns the PTY; clients attach/detach freely.
   'term.create': { params: { projectId: string; cwd?: string; cols: number; rows: number }; result: TermSession };

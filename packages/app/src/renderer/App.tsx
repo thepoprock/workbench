@@ -2,6 +2,7 @@ import { useCallback, useEffect, useState, useSyncExternalStore, type FormEvent 
 import type { DockviewApi } from 'dockview-react';
 import type { HubInfo, Project, TermSession } from '@workbench/shared';
 import { hub } from './hub.ts';
+import { Projects } from './Projects.tsx';
 import { openTerminal, Workspace } from './Workspace.tsx';
 
 function useHubStatus() {
@@ -13,22 +14,43 @@ function useHubStatus() {
 
 const basename = (p: string) => p.replace(/\/+$/, '').split('/').pop() ?? p;
 
+// Per-viewer convenience only; storage may be unavailable.
+const SELECTED_KEY = 'workbench.selectedProject';
+const loadSelected = () => {
+  try {
+    return localStorage.getItem(SELECTED_KEY);
+  } catch {
+    return null;
+  }
+};
+const saveSelected = (id: string | null) => {
+  try {
+    if (id) localStorage.setItem(SELECTED_KEY, id);
+    else localStorage.removeItem(SELECTED_KEY);
+  } catch {}
+};
+
 export function App() {
   const status = useHubStatus();
   const [info, setInfo] = useState<HubInfo | null>(null);
   const [projects, setProjects] = useState<Project[]>([]);
-  const [selected, setSelected] = useState<string | null>(null);
+  const [selected, setSelectedState] = useState<string | null>(loadSelected);
   const [sessions, setSessions] = useState<TermSession[]>([]);
   const [dock, setDock] = useState<DockviewApi | null>(null);
   const [name, setName] = useState('');
   const [error, setError] = useState<string | null>(null);
 
-  const current = projects.find((p) => p.id === selected) ?? null;
+  const setSelected = useCallback((id: string | null) => {
+    setSelectedState(id);
+    saveSelected(id);
+  }, []);
+
+  const current = projects.find((p) => p.id === selected && !p.archived) ?? null;
 
   const refresh = useCallback(async () => {
     try {
       setInfo(await hub.call('hub.info', {}));
-      setProjects(await hub.call('project.list', {}));
+      setProjects(await hub.call('project.list', { includeArchived: true }));
     } catch (err) {
       setError((err as Error).message);
     }
@@ -110,16 +132,13 @@ export function App() {
       <aside className="sidebar">
         <div className="titlebar-spacer" />
         <div className="section-label">Projects</div>
-        <ul className="list">
-          {projects.map((p) => (
-            <li key={p.id}>
-              <button className={p.id === selected ? 'active' : ''} onClick={() => setSelected(p.id)} title={p.rootPath ?? ''}>
-                {p.name}
-              </button>
-            </li>
-          ))}
-          {projects.length === 0 && <li className="empty">No projects yet</li>}
-        </ul>
+        <Projects
+          projects={projects}
+          selected={selected}
+          onSelect={setSelected}
+          onChanged={refresh}
+          onError={setError}
+        />
         <form className="new-project" onSubmit={onSubmit}>
           <input
             value={name}
@@ -172,7 +191,7 @@ export function App() {
       <main className="workspace">
         <div className="titlebar drag">
           <span className="titlebar-name">{current?.name ?? 'Workbench'}</span>
-          {current?.rootPath && <span className="muted"> — {current.rootPath}</span>}
+          {current?.rootPath && <span className="muted titlebar-path">— {current.rootPath}</span>}
         </div>
         {current ? (
           <Workspace key={current.id} project={current} onApi={setDock} />
