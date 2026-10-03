@@ -193,7 +193,8 @@ export class ClaudeHarness {
       ...(externalId && { externalId }),
     });
     this.terms.recordEvent(sessionId, `agent.${event}`, trimPayload(h), text || undefined);
-    if (event === 'SessionEnd') this.hookTokens.delete(sessionId);
+    // No token cleanup on SessionEnd: /clear ends one Claude session and starts
+    // another in the same pane. Tokens go when the pane's process exits.
     if (event === 'Stop') this.onTurn(sessionId);
     if (event === 'PostToolUseFailure') this.onToolFailure(session, h);
     return 204;

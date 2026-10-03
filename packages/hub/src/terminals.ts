@@ -45,6 +45,7 @@ interface SessionRow {
 interface Live {
   info: TermSession;
   killed: boolean; // ended via kill() (a closed tab), not on its own
+  failed: Set<string>; // side tasks that have failed (logged once)
   proc: pty.IPty | null; // null once exited
   screen: headless.Terminal;
   serializer: serialize.SerializeAddon;
@@ -97,7 +98,9 @@ export class Terminals {
     setInterval(() => {
       const now = Date.now();
       for (const s of this.live.values()) {
-        if (s.proc && s.logBytes > s.chunk.start && now - s.chunk.tsStart >= CHUNK_IDLE_MS) this.closeChunk(s);
+        if (s.proc && s.logBytes > s.chunk.start && now - s.chunk.tsStart >= CHUNK_IDLE_MS) {
+          this.safely(s, 'scrollback', () => this.closeChunk(s));
+        }
       }
     }, CHUNK_IDLE_MS / 2).unref();
   }
@@ -213,6 +216,7 @@ export class Terminals {
     const s: Live = {
       info,
       killed: false,
+      failed: new Set(),
       proc,
       screen,
       serializer,
@@ -232,8 +236,10 @@ export class Terminals {
       this.db.prepare('UPDATE sessions SET title = ? WHERE id = ?').run(title, info.id);
       this.broadcast(s.info);
     });
-    proc.onData((data) => this.output(s, data));
-    proc.onExit(({ exitCode }) => this.exited(s, exitCode));
+    // An exception escaping a native callback would take the hub (and every
+    // session) down; contain it to this event.
+    proc.onData((data) => guard('pty output', () => this.output(s, data)));
+    proc.onExit(({ exitCode }) => guard('pty exit', () => this.exited(s, exitCode)));
     return info;
   }
 
@@ -350,17 +356,32 @@ export class Terminals {
     for (const s of this.live.values()) s.proc?.kill();
   }
 
+  // Delivery first, bookkeeping after: a failing disk write, index or error
+  // rule must never stop output from reaching the screen and attached clients.
   private output(s: Live, data: string): void {
     s.screen.write(data);
-    this.onOutput(s.info, data);
-    const bytes = Buffer.from(data);
-    writeSync(s.logFd, bytes);
-    s.logBytes += bytes.length;
-    if (s.logBytes - s.chunk.start >= CHUNK_BYTES) this.closeChunk(s);
-
     for (const held of s.holding.values()) held.push(data);
     s.pending += data;
     s.flushTimer ??= setTimeout(() => this.flush(s), FLUSH_MS);
+
+    this.safely(s, 'scrollback', () => {
+      const bytes = Buffer.from(data);
+      writeSync(s.logFd, bytes);
+      s.logBytes += bytes.length;
+      if (s.logBytes - s.chunk.start >= CHUNK_BYTES) this.closeChunk(s);
+    });
+    this.safely(s, 'output hooks', () => this.onOutput(s.info, data));
+  }
+
+  // Run a side task; report its first failure per session instead of on every write.
+  private safely(s: Live, what: string, fn: () => void): void {
+    try {
+      fn();
+    } catch (err) {
+      if (s.failed.has(what)) return;
+      s.failed.add(what);
+      console.error(`${new Date().toISOString()} [hub] session ${s.info.id} ${what} failed (further failures muted): ${(err as Error).message}`);
+    }
   }
 
   private flush(s: Live): void {
@@ -372,22 +393,26 @@ export class Terminals {
     for (const c of s.subscribers) c.push(push);
   }
 
+  // Advance first so one failed insert or index can't make every later write retry it.
   private closeChunk(s: Live): void {
     if (s.logBytes === s.chunk.start) return;
     const now = Date.now();
+    const c = s.chunk;
+    s.chunk = { seq: c.seq + 1, start: s.logBytes, tsStart: now };
     this.db
       .prepare(
         'INSERT INTO scrollback_chunks (session_id, seq, file, byte_start, byte_end, ts_start, ts_end) VALUES (?, ?, ?, ?, ?, ?, ?)',
       )
-      .run(s.info.id, s.chunk.seq, `${s.info.id}.log`, s.chunk.start, s.logBytes, s.chunk.tsStart, now);
-    this.indexChunk(s.info.id, s.chunk.seq, readRange(logPath(s.info.id), s.chunk.start, s.logBytes));
-    s.chunk = { seq: s.chunk.seq + 1, start: s.logBytes, tsStart: now };
+      .run(s.info.id, c.seq, `${s.info.id}.log`, c.start, s.logBytes, c.tsStart, now);
+    this.safely(s, 'search index', () =>
+      this.indexChunk(s.info.id, c.seq, readRange(logPath(s.info.id), c.start, s.logBytes)),
+    );
   }
 
   private exited(s: Live, exitCode: number): void {
     this.flush(s);
-    this.closeChunk(s);
-    closeSync(s.logFd);
+    this.safely(s, 'scrollback', () => this.closeChunk(s));
+    this.safely(s, 'scrollback', () => closeSync(s.logFd));
     s.proc = null;
     s.info.status = 'exited';
     s.info.exitCode = exitCode;
@@ -405,6 +430,14 @@ export class Terminals {
     this.db
       .prepare('INSERT INTO events (ts, project_id, session_id, kind, payload, text) VALUES (?, ?, ?, ?, ?, ?)')
       .run(Date.now(), info.projectId, info.id, kind, JSON.stringify(payload), text ?? null);
+  }
+}
+
+function guard(what: string, fn: () => void): void {
+  try {
+    fn();
+  } catch (err) {
+    console.error(`${new Date().toISOString()} [hub] ${what} failed: ${(err as Error).stack ?? err}`);
   }
 }
 

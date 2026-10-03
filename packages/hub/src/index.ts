@@ -71,10 +71,15 @@ async function main(): Promise<void> {
   claude.onTurn = (id) => changelog.session(id);
   claude.onToolFailure = (s, hook) => errors.agentToolFailure(s.projectId, s.id, hook);
   changelog.onCommit = (projectId, sha, subject) => errors.commit(projectId, sha, subject);
-  terms.onOutput = (s, data) => errors.feed(`term:${s.id}`, s.projectId, s.id, data);
+  // Output rules run on shells only: agent screens redraw constantly (counts
+  // would inflate) and agents report failures through their hooks anyway.
+  terms.onOutput = (s, data) => {
+    if (s.kind === 'terminal') errors.feed(`term:${s.id}`, s.projectId, s.id, data);
+  };
   terms.onEnded = (s, killedByUser) => {
     errors.endStream(`term:${s.id}`);
     if (s.kind !== 'agent') return;
+    claude.unregisterHooks(s.id);
     changelog.session(s.id);
     if (!killedByUser && s.exitCode) errors.agentExit(s.projectId, s.id, s.exitCode);
   };
@@ -126,6 +131,11 @@ async function main(): Promise<void> {
   process.on('SIGINT', () => void shutdown('SIGINT'));
   process.on('SIGTERM', () => void shutdown('SIGTERM'));
 }
+
+// The hub owns every running terminal and agent; one stray exception must not
+// end them all. Log it and keep serving (the failing operation is lost).
+process.on('uncaughtException', (err) => log(`uncaught exception: ${err.stack ?? err}`));
+process.on('unhandledRejection', (err) => log(`unhandled rejection: ${(err as Error)?.stack ?? err}`));
 
 main().catch((err) => {
   log(`fatal: ${(err as Error).stack ?? err}`);
