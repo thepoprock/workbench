@@ -30,7 +30,7 @@ function files(dir: string, recursive: boolean, depth = 0): string[] {
       if (recursive) out.push(...files(p, true, depth + 1));
     } else if (TEXT.test(name) && st.size <= MAX_FILE) out.push(p);
   }
-  return out.sort();
+  return out.sort((a, b) => a.localeCompare(b, undefined, { sensitivity: 'base', numeric: true }));
 }
 
 // Everything Claude keeps that's relevant to a project (or just the global set).
@@ -50,9 +50,12 @@ export function listClaudeFiles(projectRoot: string | null): ClaudeFile[] {
     add('project', join(projectRoot, '.claude', 'settings.json'), '.claude/settings.json');
     add('project', join(projectRoot, '.claude', 'settings.local.json'), '.claude/settings.local.json');
     const mem = join(projectsRoot(), encode(projectRoot), 'memory');
-    const memFiles = files(mem, false);
-    // MEMORY.md (the index) first, then the rest.
-    memFiles.sort((a, b) => Number(basename(b) === 'MEMORY.md') - Number(basename(a) === 'MEMORY.md'));
+    // MEMORY.md (the index) first, then newest first.
+    const mtime = (p: string) => statSync(p).mtimeMs;
+    const memFiles = files(mem, false).sort(
+      (a, b) =>
+        Number(basename(b) === 'MEMORY.md') - Number(basename(a) === 'MEMORY.md') || mtime(b) - mtime(a),
+    );
     for (const f of memFiles) add('memory', f, basename(f));
   }
   return out;

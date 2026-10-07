@@ -378,8 +378,7 @@ export class ClaudeHarness {
             return { path, mtime: st.mtimeMs, size: st.size, harnessId: a.harnessId };
           });
       })
-      .sort((a, b) => b.mtime - a.mtime)
-      .slice(0, HISTORY_LIMIT);
+      .sort((a, b) => b.mtime - a.mtime);
 
     const out: ClaudeTranscript[] = [];
     for (const f of files) {
@@ -391,7 +390,9 @@ export class ClaudeHarness {
       }
       if (cached.t) out.push({ ...cached.t, harnessId: f.harnessId });
     }
-    return out;
+    // File times can't pick the newest (Claude rewrites old transcripts), so
+    // read them all (cached by size+mtime) and rank by last message.
+    return out.sort((a, b) => b.updatedAt - a.updatedAt).slice(0, HISTORY_LIMIT);
   }
 }
 
@@ -429,10 +430,15 @@ async function readTranscript(path: string, mtime: number, size: number): Promis
   let title: string | null = null;
   let firstPrompt: string | null = null;
   let startedAt: number | null = null;
+  let lastAt: number | null = null; // last user/assistant message (Claude rewrites old files, so mtime lies)
 
   const rl = createInterface({ input: createReadStream(path, 'utf8'), crlfDelay: Infinity });
   for await (const line of rl) {
     const isTitle = line.includes('"type":"ai-title"');
+    if (line.includes('"type":"user"') || line.includes('"type":"assistant"')) {
+      const t = /"timestamp":"([^"]+)"/.exec(line);
+      if (t) lastAt = Date.parse(t[1]) || lastAt;
+    }
     const wantUser = firstPrompt === null && line.includes('"type":"user"');
     const wantTs = startedAt === null && line.includes('"timestamp"');
     if (!isTitle && !wantUser && !wantTs) continue;
@@ -456,7 +462,7 @@ async function readTranscript(path: string, mtime: number, size: number): Promis
     title: title ?? firstPrompt!.slice(0, 80),
     firstPrompt,
     startedAt,
-    updatedAt: mtime,
+    updatedAt: lastAt ?? mtime,
     bytes: size,
   };
 }
