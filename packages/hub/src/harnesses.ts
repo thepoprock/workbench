@@ -129,10 +129,12 @@ export class Harnesses {
       .map((h) => h.id);
   }
 
-  // Every Claude account: the main login plus each extra config folder.
+  // Every Claude folder: the main ~/.claude (as the main login) plus each
+  // separate-folder account. Token accounts share the main folder, so listing
+  // them too would show every conversation twice.
   accounts(): ClaudeAccount[] {
     return this.list()
-      .filter((h) => h.type === 'claude-code')
+      .filter((h) => h.type === 'claude-code' && (h.id === HARNESS_ID || h.config.configDir))
       .map((h) => ({ harnessId: h.id, configDir: h.config.configDir || undefined }));
   }
 
