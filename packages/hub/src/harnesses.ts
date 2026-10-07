@@ -245,7 +245,16 @@ export class Harnesses {
     this.db.prepare('UPDATE harnesses SET deleted = 1, enabled = 0 WHERE id = ?').run(id);
   }
 
-  async start(projectId: string, harnessId: string | undefined, cols: number, rows: number, resume?: string): Promise<TermSession> {
+  // cwd: run somewhere other than the project folder (a filed conversation
+  // must resume in the folder it was started in, where its transcript is).
+  async start(
+    projectId: string,
+    harnessId: string | undefined,
+    cols: number,
+    rows: number,
+    resume?: string,
+    cwd?: string,
+  ): Promise<TermSession> {
     const project = this.db.prepare('SELECT default_harness_id FROM projects WHERE id = ?').get(projectId) as
       | { default_harness_id: string | null }
       | undefined;
@@ -262,7 +271,7 @@ export class Harnesses {
         token = (await keychainGet(h.id)) ?? undefined;
         if (!token) throw new Error(`${h.name} has no token yet — add one under Harnesses`);
       }
-      return this.claude.start(projectId, undefined, cols, rows, {
+      return this.claude.start(projectId, cwd, cols, rows, {
         resume,
         remoteName: h.config.remoteControl === 'off' ? undefined : name,
         account: { harnessId: h.id, configDir: h.config.configDir || undefined, token },

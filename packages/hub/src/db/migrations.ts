@@ -190,4 +190,16 @@ export const migrations: string[] = [
 
   // 9 — app-wide settings (e.g. which Claude account new sessions bill to)
   `CREATE TABLE settings (key TEXT PRIMARY KEY, value TEXT NOT NULL);`,
+
+  // 10 — a Claude conversation can be shown under a project other than the
+  //      folder it was started in (by: 'auto' from Organize, 'user' by hand)
+  `
+  CREATE TABLE conversation_projects (
+    transcript_id TEXT PRIMARY KEY,
+    project_id    TEXT NOT NULL REFERENCES projects(id),
+    assigned_by   TEXT NOT NULL CHECK (assigned_by IN ('auto', 'user')),
+    assigned_at   INTEGER NOT NULL
+  );
+  CREATE INDEX conversation_projects_project ON conversation_projects(project_id);
+  `,
 ];

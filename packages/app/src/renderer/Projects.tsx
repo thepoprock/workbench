@@ -4,6 +4,7 @@ import { hub } from './hub.ts';
 
 interface Props {
   onImport: () => void; // add every folder Claude has been used in
+  onOrganize: () => void; // file conversations under the project they worked in
   errorCounts: Record<string, number>; // open errors per project
   projects: Project[]; // active and archived
   selected: string | null;
@@ -12,7 +13,7 @@ interface Props {
   onError: (msg: string) => void;
 }
 
-export function Projects({ onImport, errorCounts, projects, selected, onSelect, onChanged, onError }: Props) {
+export function Projects({ onImport, onOrganize, errorCounts, projects, selected, onSelect, onChanged, onError }: Props) {
   const [editing, setEditing] = useState<string | null>(null);
   const [draft, setDraft] = useState('');
   const [showArchived, setShowArchived] = useState(false);
@@ -124,6 +125,9 @@ export function Projects({ onImport, errorCounts, projects, selected, onSelect, 
       </ul>
       <button className="disclosure" onClick={onImport} title="Create a project for every folder you've used Claude in">
         ⤓ Import from Claude
+      </button>
+      <button className="disclosure" onClick={onOrganize} title="File conversations under the project they actually worked in">
+        ⇄ Organize conversations…
       </button>
       {archived.length > 0 && (
         <>

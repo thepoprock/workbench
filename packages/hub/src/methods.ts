@@ -6,8 +6,10 @@ import { schemaVersion, type DB } from './db/index.ts';
 import { reply, type Client, type Dispatch } from './server.ts';
 import { keychainGet, keychainSet } from './keychain.ts';
 import { claudeProjectFolders, listClaudeFiles, readClaudeFile, writeClaudeFile } from './claudecfg.ts';
+import { Organizer, projectName } from './organize.ts';
+import { projectsRoot } from './claude.ts';
 import { homedir } from 'node:os';
-import { basename } from 'node:path';
+import { basename, dirname } from 'node:path';
 import type { ClaudeHarness } from './claude.ts';
 import type { History } from './history.ts';
 import type { Ideas } from './ideas.ts';
@@ -139,6 +141,14 @@ export function makeDispatch(
     return root ? folderAccount(claude.accountOf(externalId, root, harnesses.accounts())?.harnessId) : undefined;
   };
 
+  const organizer = new Organizer();
+  // Where a conversation's transcript file is (any account), for filed ones.
+  const transcriptFile = (id: string): { path: string; harnessId: string } | null => {
+    const row = db.prepare('SELECT path FROM transcript_files WHERE transcript_id = ?').get(id) as { path: string } | undefined;
+    if (!row) return null;
+    const acct = harnesses.accounts().find((a) => row.path.startsWith(projectsRoot(a.configDir)));
+    return { path: row.path, harnessId: acct?.harnessId ?? 'claude-code' };
+  };
   const projectRoots = () =>
     (db.prepare('SELECT root_path FROM projects WHERE root_path IS NOT NULL').all() as { root_path: string }[]).map(
       (r) => r.root_path,
@@ -210,8 +220,13 @@ export function makeDispatch(
           .list(projectId)
           .find((s) => s.status === 'running' && s.agent?.externalId === resume);
         if (open) return open; // already running here: the UI focuses it
-        // A conversation resumes on the account it lives in.
+        // A conversation resumes on the account it lives in, in the folder it
+        // was started in (where Claude keeps it) even if it's filed elsewhere.
         harnessId ??= resumeAccount(projectId, resume);
+        const startedIn = (db.prepare('SELECT cwd FROM transcript_files WHERE transcript_id = ?').get(resume) as { cwd: string | null } | undefined)?.cwd;
+        if (startedIn && startedIn !== getProject(projectId).root_path) {
+          return harnesses.start(projectId, harnessId, cols, rows, resume, startedIn);
+        }
       }
       return harnesses.start(projectId, harnessId, cols, rows, resume);
     },
@@ -270,7 +285,60 @@ export function makeDispatch(
     },
     'agent.history': ({ projectId }) => {
       const root = getProject(projectId).root_path;
-      return root ? claude.history(root, harnesses.accounts()) : [];
+      const filed = db.prepare('SELECT transcript_id, project_id FROM conversation_projects').all() as {
+        transcript_id: string;
+        project_id: string;
+      }[];
+      const here = filed
+        .filter((f) => f.project_id === projectId)
+        .map((f) => transcriptFile(f.transcript_id))
+        .filter((x): x is { path: string; harnessId: string } => !!x);
+      const elsewhere = new Set(filed.filter((f) => f.project_id !== projectId).map((f) => f.transcript_id));
+      if (!root) return claude.readTranscripts(here).then((ts) => ts.map((t) => ({ ...t, movedHere: true })));
+      return claude.history(root, harnesses.accounts(), { elsewhere, here });
+    },
+    'claude.organize': () =>
+      organizer.suggest(
+        harnesses.accounts().map((a) => projectsRoot(a.configDir)),
+        (files) => claude.readTranscripts(files),
+        (root) => (db.prepare('SELECT id FROM projects WHERE root_path = ? AND archived = 0').get(root) as { id: string } | undefined)?.id ?? null,
+        (path) => (db.prepare('SELECT cwd FROM transcript_files WHERE path = ?').get(path) as { cwd: string } | undefined)?.cwd ?? null,
+      ),
+    'claude.organizeApply': ({ groups }) => {
+      let created = 0;
+      let moved = 0;
+      for (const g of groups) {
+        let id = (db.prepare('SELECT id FROM projects WHERE root_path = ? AND archived = 0').get(g.root) as { id: string } | undefined)?.id;
+        if (!id) {
+          // Two folders with the same name (…/fleet-src/bogglinux, …/D2bot/bogglinux): add the parent.
+          let name = projectName(g.root);
+          const taken = (n: string) => !!db.prepare('SELECT 1 FROM projects WHERE name = ? COLLATE NOCASE').get(n);
+          if (taken(name)) name = `${basename(dirname(g.root))}/${name}`;
+          id = createProject(name, g.root).id;
+          created++;
+        }
+        for (const t of g.transcriptIds) {
+          db.prepare(
+            `INSERT INTO conversation_projects (transcript_id, project_id, assigned_by, assigned_at) VALUES (?, ?, 'auto', ?)
+             ON CONFLICT(transcript_id) DO UPDATE SET project_id = excluded.project_id, assigned_by = 'auto', assigned_at = excluded.assigned_at
+             WHERE conversation_projects.assigned_by = 'auto'`,
+          ).run(t, id, Date.now());
+          moved++;
+        }
+      }
+      return { created, moved };
+    },
+    'claude.assign': ({ transcriptId, projectId }) => {
+      if (projectId === null) {
+        db.prepare('DELETE FROM conversation_projects WHERE transcript_id = ?').run(transcriptId);
+        return null;
+      }
+      getProject(projectId);
+      db.prepare(
+        `INSERT INTO conversation_projects (transcript_id, project_id, assigned_by, assigned_at) VALUES (?, ?, 'user', ?)
+         ON CONFLICT(transcript_id) DO UPDATE SET project_id = excluded.project_id, assigned_by = 'user', assigned_at = excluded.assigned_at`,
+      ).run(transcriptId, projectId, Date.now());
+      return null;
     },
 
     'idea.list': ({ includeArchived }) => ideas.list(includeArchived),

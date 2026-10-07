@@ -364,35 +364,46 @@ export class ClaudeHarness {
     return 204;
   }
 
-  // Past conversations for a project folder across all accounts, newest first.
-  async history(cwd: string, accounts: ClaudeAccount[]): Promise<ClaudeTranscript[]> {
-    const files = accounts
-      .flatMap((a) => {
-        const dir = transcriptDir(cwd, a.configDir);
-        if (!existsSync(dir)) return [];
-        return readdirSync(dir)
-          .filter((f) => f.endsWith('.jsonl'))
-          .map((f) => {
-            const path = join(dir, f);
-            const st = statSync(path);
-            return { path, mtime: st.mtimeMs, size: st.size, harnessId: a.harnessId };
-          });
-      })
-      .sort((a, b) => b.mtime - a.mtime);
+  // Past conversations for a project: those started in its folder (any
+  // account), minus ones filed under other projects, plus ones filed here.
+  async history(
+    cwd: string,
+    accounts: ClaudeAccount[],
+    filed: { elsewhere: Set<string>; here: { path: string; harnessId: string }[] } = { elsewhere: new Set(), here: [] },
+  ): Promise<ClaudeTranscript[]> {
+    const inFolder = accounts.flatMap((a) => {
+      const dir = transcriptDir(cwd, a.configDir);
+      if (!existsSync(dir)) return [];
+      return readdirSync(dir)
+        .filter((f) => f.endsWith('.jsonl') && !filed.elsewhere.has(f.slice(0, -6)))
+        .map((f) => ({ path: join(dir, f), harnessId: a.harnessId }));
+    });
+    const out = [
+      ...(await this.readTranscripts(inFolder)),
+      ...(await this.readTranscripts(filed.here.filter((h) => existsSync(h.path)))).map((t) => ({ ...t, movedHere: true })),
+    ];
+    // File times can't pick the newest (Claude rewrites old transcripts), so
+    // read them all (cached by size+mtime) and rank by last message.
+    const seen = new Set<string>();
+    return out
+      .filter((t) => !seen.has(t.id) && seen.add(t.id))
+      .sort((a, b) => b.updatedAt - a.updatedAt)
+      .slice(0, HISTORY_LIMIT);
+  }
 
+  async readTranscripts(files: { path: string; harnessId: string }[]): Promise<ClaudeTranscript[]> {
     const out: ClaudeTranscript[] = [];
     for (const f of files) {
-      const key = `${f.mtime}:${f.size}`;
+      const st = statSync(f.path);
+      const key = `${st.mtimeMs}:${st.size}`;
       let cached = this.historyCache.get(f.path);
       if (cached?.key !== key) {
-        cached = { key, t: await readTranscript(f.path, f.mtime, f.size) };
+        cached = { key, t: await readTranscript(f.path, st.mtimeMs, st.size) };
         this.historyCache.set(f.path, cached);
       }
       if (cached.t) out.push({ ...cached.t, harnessId: f.harnessId });
     }
-    // File times can't pick the newest (Claude rewrites old transcripts), so
-    // read them all (cached by size+mtime) and rank by last message.
-    return out.sort((a, b) => b.updatedAt - a.updatedAt).slice(0, HISTORY_LIMIT);
+    return out;
   }
 }
 

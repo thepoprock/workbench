@@ -68,6 +68,11 @@ live in `~/Library/Application Support/Workbench/`.
   **Agents +** and resume only in their own folder. History and search cover every account.
 - Your existing Claude data: **⤓ Import from Claude** (under Projects) makes a project for
   every folder Claude has been used in, so all past conversations show in Claude history.
+  Claude files conversations by the folder they were *started* in (usually ~), so
+  **⇄ Organize conversations…** proposes the project each one really belongs to (the repo
+  or folder whose files it touched most) for you to review and file; right-click a
+  conversation → **Move to project** to fix one by hand (manual moves are never overridden).
+  Filed conversations still resume in the folder they were started in.
   **Claude files** (Agents section) browses and edits global CLAUDE.md, settings, agents,
   skills and the project's CLAUDE.md and memory — nothing else is reachable
   (`~/.claude.json` never), and JSON is validated before saving.

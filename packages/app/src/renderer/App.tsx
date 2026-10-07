@@ -7,6 +7,7 @@ import { loadIdeas, useIdeas } from './ideas.ts';
 import { accountLabel, loadAccounts, useAccounts } from './accounts.ts';
 import { Agents } from './Agents.tsx';
 import { HarnessManager } from './HarnessManager.tsx';
+import { Organize } from './Organize.tsx';
 import { putSessions, statusClass, useProjectSessions } from './sessions.ts';
 import { hub } from './hub.ts';
 import { Projects } from './Projects.tsx';
@@ -65,6 +66,7 @@ export function App() {
   const [error, setError] = useState<string | null>(null);
   const [searching, setSearching] = useState(false);
   const [managingHarnesses, setManagingHarnesses] = useState(false);
+  const [organizing, setOrganizing] = useState(false);
   const [errorCounts, setErrorCounts] = useState<Record<string, number>>({});
   // An action waiting for a given project's dock (opening a search hit in another project).
   const [pending, setPending] = useState<{ projectId: string; run: (dock: DockviewApi) => void } | null>(null);
@@ -312,6 +314,7 @@ export function App() {
 
         <div className="section-label spaced">Projects</div>
         <Projects
+          onOrganize={() => setOrganizing(true)}
           onImport={async () => {
             try {
               const r = await hub.call('claude.import', {});
@@ -342,6 +345,7 @@ export function App() {
 
         {current && (
           <Agents
+            projects={projects.filter((p) => !p.archived)}
             onClaudeFiles={() => dock && openClaudeFiles(dock, current.id)}
             onRemote={(url) => dock && openRemote(dock, url)}
             onMove={(s, harnessId) =>
@@ -455,6 +459,15 @@ export function App() {
           </div>
         )}
       </main>
+      {organizing && (
+        <Organize
+          onClose={() => setOrganizing(false)}
+          onDone={(msg) => {
+            void refresh();
+            setError(msg);
+          }}
+        />
+      )}
       {managingHarnesses && (
         <HarnessManager
           onClose={() => setManagingHarnesses(false)}

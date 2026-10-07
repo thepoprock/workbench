@@ -96,6 +96,7 @@ export interface Pushes {
 export interface ClaudeTranscript {
   id: string;
   harnessId: string; // the Claude account (harness) whose folder holds it
+  movedHere?: boolean; // shown here by Organize / Move to project, started elsewhere
   title: string;
   firstPrompt: string | null;
   startedAt: number | null;
@@ -206,6 +207,15 @@ export interface ClaudeFile {
   path: string;
   label: string;
   bytes: number;
+}
+
+// Organize: conversations grouped by where they actually worked (the repo or
+// folder whose files they touched most), to file under the right project.
+export interface OrganizeGroup {
+  root: string; // folder the work happened in
+  projectId: string | null; // existing project for that folder
+  isRepo: boolean;
+  conversations: { id: string; title: string; updatedAt: number; startedIn: string }[];
 }
 
 export type HitSource = 'agent' | 'terminal' | 'transcript' | 'commit' | 'error';
@@ -322,6 +332,14 @@ export interface Methods {
   'claude.read': { params: { path: string }; result: string };
   'claude.write': { params: { path: string; content: string }; result: null };
   'claude.import': { params: Empty; result: { created: Project[]; existing: number } };
+  'claude.organize': { params: Empty; result: OrganizeGroup[] };
+  // File conversations under projects (creating projects for new folders).
+  'claude.organizeApply': {
+    params: { groups: { root: string; transcriptIds: string[] }[] };
+    result: { created: number; moved: number };
+  };
+  // Move one conversation to a project (null: back to the folder it was started in).
+  'claude.assign': { params: { transcriptId: string; projectId: string | null }; result: null };
 
   // History. Search spans agent events, terminal output and Claude transcripts.
   'history.search': { params: { query: string; projectId?: string; limit?: number }; result: SearchHit[] };

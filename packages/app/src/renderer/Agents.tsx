@@ -20,6 +20,7 @@ const STATE_LABEL: Record<string, string> = {
 };
 
 interface Props {
+  projects: Project[]; // for Move to project
   onClaudeFiles: () => void;
   onRemote: (url: string) => void;
   onMove: (s: TermSession, harnessId: string) => void;
@@ -30,7 +31,7 @@ interface Props {
   onStart: (resume?: string, harnessId?: string) => void;
 }
 
-export function Agents({ onClaudeFiles, onRemote, onMove, project, sessions, canOpen, onOpen, onStart }: Props) {
+export function Agents({ projects, onClaudeFiles, onRemote, onMove, project, sessions, canOpen, onOpen, onStart }: Props) {
   const [showHistory, setShowHistory] = useState(false);
   const accounts = useAccounts();
   const multiAccount = accounts.harnesses.filter((h) => h.type === 'claude-code').length > 1;
@@ -154,10 +155,30 @@ export function Agents({ onClaudeFiles, onRemote, onMove, project, sessions, can
           {project.rootPath && history?.length === 0 && <li className="empty">No past sessions in this folder.</li>}
           {history?.map((h) => (
             <li key={h.id}>
-              <button onClick={() => onStart(h.id)} disabled={!canOpen} title={h.firstPrompt ?? h.title}>
+              <button
+                onClick={() => onStart(h.id)}
+                disabled={!canOpen}
+                title={h.firstPrompt ?? h.title}
+                onContextMenu={(e) => {
+                  e.preventDefault();
+                  void window.workbench
+                    .menu([
+                      ...projects
+                        .filter((p) => p.id !== project.id)
+                        .map((p) => ({ id: p.id, label: `Move to ${p.name}` })),
+                      ...(h.movedHere ? [{ type: 'separator' as const }, { id: '__back', label: 'Back to the folder it was started in' }] : []),
+                    ])
+                    .then(async (id) => {
+                      if (!id) return;
+                      await hub.call('claude.assign', { transcriptId: h.id, projectId: id === '__back' ? null : id });
+                      setHistory((list) => list?.filter((x) => x.id !== h.id) ?? null);
+                    });
+                }}
+              >
                 <span className="agent-text">
                   <span className="agent-title">
                     {openIds.has(h.id) && <span className="dot agent-idle" />} {h.title}
+                    {h.movedHere && <span className="muted" title="Filed here; started in another folder"> ↪</span>}
                   </span>
                   <span className="agent-activity">
                     {ago(h.updatedAt)}
