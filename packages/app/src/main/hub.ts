@@ -1,5 +1,5 @@
 import { spawn } from 'node:child_process';
-import { openSync, readFileSync } from 'node:fs';
+import { mkdirSync, openSync, readFileSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { join, resolve } from 'node:path';
 import { app } from 'electron';
@@ -35,6 +35,8 @@ function probe(d: HubDiscovery): Promise<boolean> {
 // Packaging will bundle the hub and run it under ELECTRON_RUN_AS_NODE.
 function spawnHub(): void {
   const hubDir = resolve(app.getAppPath(), '..', 'hub');
+  // First run: the data folder doesn't exist until the hub makes it, but the log goes there.
+  mkdirSync(dataDir, { recursive: true, mode: 0o700 });
   const log = openSync(join(dataDir, 'hub.log'), 'a');
   const child = spawn('node', ['--import', 'tsx', join(hubDir, 'src', 'index.ts')], {
     cwd: hubDir,
