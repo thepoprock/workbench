@@ -10,7 +10,7 @@ import { HarnessManager } from './HarnessManager.tsx';
 import { putSessions, statusClass, useProjectSessions } from './sessions.ts';
 import { hub } from './hub.ts';
 import { Projects } from './Projects.tsx';
-import { openChangelog, openErrors, openHistory, openRemote, openTerminal, replaceTerminal } from './dock.ts';
+import { openChangelog, openClaudeFiles, openErrors, openHistory, openRemote, openTerminal, replaceTerminal } from './dock.ts';
 import { Elsewhere } from './Elsewhere.tsx';
 import { Search } from './Search.tsx';
 import { Workspace } from './Workspace.tsx';
@@ -312,6 +312,15 @@ export function App() {
 
         <div className="section-label spaced">Projects</div>
         <Projects
+          onImport={async () => {
+            try {
+              const r = await hub.call('claude.import', {});
+              await refresh();
+              setError(r.created.length ? null : 'Every folder Claude has used is already a project.');
+            } catch (err) {
+              setError((err as Error).message);
+            }
+          }}
           errorCounts={errorCounts}
           projects={projects}
           selected={currentIdea ? null : selected}
@@ -333,6 +342,7 @@ export function App() {
 
         {current && (
           <Agents
+            onClaudeFiles={() => dock && openClaudeFiles(dock, current.id)}
             onRemote={(url) => dock && openRemote(dock, url)}
             onMove={(s, harnessId) =>
               void hub.call('agent.move', { sessionId: s.id, harnessId }).then(

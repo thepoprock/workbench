@@ -8,6 +8,7 @@ import { HistoryPane } from './HistoryPane.tsx';
 import { ChangelogPane } from './ChangelogPane.tsx';
 import { ErrorsPane } from './ErrorsPane.tsx';
 import { RemotePane } from './RemotePane.tsx';
+import { ClaudePane } from './ClaudePane.tsx';
 import { bounded } from './Boundary.tsx';
 import { TerminalPane } from './TerminalPane.tsx';
 
@@ -17,6 +18,7 @@ const components = {
   changelog: bounded('Changelog', ChangelogPane),
   errors: bounded('Errors', ErrorsPane),
   remote: bounded('Remote', RemotePane),
+  claude: bounded('Claude files', ClaudePane),
 };
 const tabComponents = { terminal: Tab, history: HistoryTab, plain: HistoryTab };
 const SAVE_DEBOUNCE_MS = 400;

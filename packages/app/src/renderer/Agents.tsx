@@ -20,6 +20,7 @@ const STATE_LABEL: Record<string, string> = {
 };
 
 interface Props {
+  onClaudeFiles: () => void;
   onRemote: (url: string) => void;
   onMove: (s: TermSession, harnessId: string) => void;
   project: Project;
@@ -29,7 +30,7 @@ interface Props {
   onStart: (resume?: string, harnessId?: string) => void;
 }
 
-export function Agents({ onRemote, onMove, project, sessions, canOpen, onOpen, onStart }: Props) {
+export function Agents({ onClaudeFiles, onRemote, onMove, project, sessions, canOpen, onOpen, onStart }: Props) {
   const [showHistory, setShowHistory] = useState(false);
   const accounts = useAccounts();
   const multiAccount = accounts.harnesses.filter((h) => h.type === 'claude-code').length > 1;
@@ -140,6 +141,9 @@ export function Agents({ onRemote, onMove, project, sessions, canOpen, onOpen, o
         {sessions.length === 0 && <li className="empty">None</li>}
       </ul>
 
+      <button className="disclosure" onClick={onClaudeFiles} title="Instructions, settings, agents, skills and this project's memory">
+        ▸ Claude files
+      </button>
       <button className="disclosure" onClick={() => setShowHistory((v) => !v)}>
         {showHistory ? '▾' : '▸'} Claude history
       </button>

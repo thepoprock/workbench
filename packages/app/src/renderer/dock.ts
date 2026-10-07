@@ -63,6 +63,12 @@ export function replaceTerminal(api: DockviewApi, oldId: string, sessionId: stri
   old.api.close();
 }
 
+export function openClaudeFiles(api: DockviewApi, projectId: string): void {
+  const existing = api.getPanel('claude-files');
+  if (existing) return existing.api.setActive();
+  api.addPanel({ id: 'claude-files', component: 'claude', tabComponent: 'plain', title: 'Claude files', params: { projectId } });
+}
+
 // One Remote pane per project; reopening points it at a new URL.
 export function openRemote(api: DockviewApi, url = 'https://claude.ai/code'): void {
   const existing = api.getPanel('remote');

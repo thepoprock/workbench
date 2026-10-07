@@ -5,6 +5,9 @@ import { PROTOCOL_VERSION } from '@workbench/shared';
 import { schemaVersion, type DB } from './db/index.ts';
 import { reply, type Client, type Dispatch } from './server.ts';
 import { keychainGet, keychainSet } from './keychain.ts';
+import { claudeProjectFolders, listClaudeFiles, readClaudeFile, writeClaudeFile } from './claudecfg.ts';
+import { homedir } from 'node:os';
+import { basename } from 'node:path';
 import type { ClaudeHarness } from './claude.ts';
 import type { History } from './history.ts';
 import type { Ideas } from './ideas.ts';
@@ -135,6 +138,11 @@ export function makeDispatch(
     const root = getProject(projectId).root_path;
     return root ? folderAccount(claude.accountOf(externalId, root, harnesses.accounts())?.harnessId) : undefined;
   };
+
+  const projectRoots = () =>
+    (db.prepare('SELECT root_path FROM projects WHERE root_path IS NOT NULL').all() as { root_path: string }[]).map(
+      (r) => r.root_path,
+    );
 
   const handlers: Handlers = {
     'hub.info': () => ({ ...info, protocol: PROTOCOL_VERSION, schemaVersion: schemaVersion(db) }),
@@ -285,6 +293,25 @@ export function makeDispatch(
     'rules.list': ({ projectId }) => errors.rules(projectId),
     'rules.save': ({ rule }) => errors.saveRule(rule),
     'rules.delete': ({ id }) => errors.deleteRule(id),
+
+    'claude.files': ({ projectId }) => listClaudeFiles(projectId ? getProject(projectId).root_path : null),
+    'claude.read': ({ path }) => readClaudeFile(path, projectRoots()),
+    'claude.write': ({ path, content }) => writeClaudeFile(path, content, projectRoots()),
+    'claude.import': () => {
+      const known = new Set(projectRoots());
+      const created: Project[] = [];
+      let existing = 0;
+      for (const f of claudeProjectFolders()) {
+        if (known.has(f.path)) {
+          existing++;
+          continue;
+        }
+        const name = f.path === homedir() ? 'Home' : f.path === '/' ? 'Root (/)' : basename(f.path);
+        created.push(createProject(name, f.path));
+        known.add(f.path);
+      }
+      return { created, existing };
+    },
 
     'history.search': ({ query, projectId, limit }) => history.search(query, projectId, limit),
     'scrollback.chunks': ({ sessionId }) => ({ session: terms.info(sessionId), chunks: terms.chunks(sessionId) }),

@@ -200,6 +200,14 @@ export interface ModelServer {
   models: string[];
 }
 
+// A file Claude Code keeps for you (instructions, settings, agents, memory).
+export interface ClaudeFile {
+  group: 'global' | 'agents' | 'project' | 'memory';
+  path: string;
+  label: string;
+  bytes: number;
+}
+
 export type HitSource = 'agent' | 'terminal' | 'transcript' | 'commit' | 'error';
 
 export interface SearchHit {
@@ -308,6 +316,12 @@ export interface Methods {
   'rules.list': { params: { projectId: string }; result: ErrorRule[] }; // global + this project's
   'rules.save': { params: { rule: Omit<ErrorRule, 'id'> & { id?: string } }; result: ErrorRule };
   'rules.delete': { params: { id: string }; result: null };
+
+  // Your existing Claude data: files to view/edit, and folders to import as projects.
+  'claude.files': { params: { projectId?: string }; result: ClaudeFile[] };
+  'claude.read': { params: { path: string }; result: string };
+  'claude.write': { params: { path: string; content: string }; result: null };
+  'claude.import': { params: Empty; result: { created: Project[]; existing: number } };
 
   // History. Search spans agent events, terminal output and Claude transcripts.
   'history.search': { params: { query: string; projectId?: string; limit?: number }; result: SearchHit[] };

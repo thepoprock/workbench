@@ -66,6 +66,11 @@ live in `~/Library/Application Support/Workbench/`.
   Auto-switch when an account runs out** it moves itself and switches Credits.
   Separate-folder accounts are picked per conversation in
   **Agents +** and resume only in their own folder. History and search cover every account.
+- Your existing Claude data: **⤓ Import from Claude** (under Projects) makes a project for
+  every folder Claude has been used in, so all past conversations show in Claude history.
+  **Claude files** (Agents section) browses and edits global CLAUDE.md, settings, agents,
+  skills and the project's CLAUDE.md and memory — nothing else is reachable
+  (`~/.claude.json` never), and JSON is validated before saving.
 - Remote Control: Workbench starts Claude with Remote Control on (named after
   the project; switch off with `remoteControl: "off"` on the Claude Code
   harness), so each session is also reachable from claude.ai and your phone —
