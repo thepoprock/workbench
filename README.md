@@ -47,6 +47,12 @@ live in `~/Library/Application Support/Workbench/`.
   commands. **Agents +** offers every enabled harness; a project's right-click
   menu sets its default (what ⌘⇧A starts). Any program can be a harness by
   POSTing the events documented in `packages/runner/events.mjs`.
+- Claude accounts: **Harnesses… → Add Claude account** gives a second (third…)
+  Claude login its own config folder (`CLAUDE_CONFIG_DIR` under Workbench's data
+  folder) — separate sign-in, settings, memory, history and folder trust. Each
+  account is a choice in **Agents +** and can be a project's default; resuming a
+  conversation always uses the account it started on; history and search cover
+  every account. A new account runs Claude's first-run setup once.
 - Remote Control: Workbench starts Claude with Remote Control on (named after
   the project; switch off with `remoteControl: "off"` on the Claude Code
   harness), so each session is also reachable from claude.ai and your phone —

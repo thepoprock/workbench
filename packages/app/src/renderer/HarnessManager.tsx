@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from 'react';
-import type { Harness, HarnessType, ModelServer } from '@workbench/shared';
+import type { AccountStatus, Harness, HarnessType, ModelServer } from '@workbench/shared';
 import { hub } from './hub.ts';
 
 const TYPE_LABEL: Record<HarnessType, string> = {
@@ -26,14 +26,45 @@ const FIELDS: Record<HarnessType, { key: string; label: string; placeholder: str
 
 type Draft = Omit<Harness, 'id' | 'builtin'> & { id?: string };
 
-export function HarnessManager({ onClose }: { onClose: () => void }) {
+// onLogin opens a sign-in pane for a Claude account (needs an open project).
+export function HarnessManager({ onClose, onLogin }: { onClose: () => void; onLogin: (harnessId: string) => void }) {
   const [harnesses, setHarnesses] = useState<Harness[]>([]);
+  const [status, setStatus] = useState<Record<string, AccountStatus | 'error'>>({});
+  const [newAccount, setNewAccount] = useState<string | null>(null);
   const [draft, setDraft] = useState<Draft | null>(null);
   const [servers, setServers] = useState<ModelServer[] | null>(null);
   const [error, setError] = useState<string | null>(null);
 
-  const load = useCallback(async () => setHarnesses(await hub.call('harness.list', {})), []);
+  const load = useCallback(async () => {
+    const list = await hub.call('harness.list', {});
+    setHarnesses(list);
+    // Who is signed in to each Claude account.
+    for (const h of list.filter((x) => x.type === 'claude-code')) {
+      hub.call('account.status', { harnessId: h.id }).then(
+        (st) => setStatus((m) => ({ ...m, [h.id]: st })),
+        () => setStatus((m) => ({ ...m, [h.id]: 'error' })),
+      );
+    }
+  }, []);
   useEffect(() => void load(), [load]);
+
+  const addAccount = async () => {
+    const name = newAccount?.trim();
+    if (!name) return setNewAccount(null);
+    let id: string | null = null;
+    await run(async () => {
+      id = (await hub.call('account.add', { name })).id;
+    });
+    setNewAccount(null);
+    if (id) onLogin(id);
+  };
+
+  const accountLine = (h: Harness) => {
+    const st = status[h.id];
+    if (!st) return 'checking…';
+    if (st === 'error') return 'status unavailable';
+    return st.loggedIn ? `signed in as ${st.email ?? 'unknown'}` : 'not signed in';
+  };
 
   const run = async (fn: () => Promise<unknown>) => {
     try {
@@ -80,13 +111,18 @@ export function HarnessManager({ onClose }: { onClose: () => void }) {
               <div className="hm-text">
                 <span className="hm-name">{h.name}</span>
                 <span className="muted small">
-                  {TYPE_LABEL[h.type]}
+                  {h.type === 'claude-code' ? `${h.config.configDir ? 'Claude account' : 'Main Claude account'} · ${accountLine(h)}` : TYPE_LABEL[h.type]}
                   {h.config.model ? ` · ${h.config.model}` : ''}
                   {h.config.baseUrl ? ` · ${h.config.baseUrl}` : ''}
                   {h.config.command ? ` · ${h.config.command}` : ''}
                   {h.config.script ? ` · ${h.config.script}` : ''}
                 </span>
               </div>
+              {h.type === 'claude-code' && status[h.id] && status[h.id] !== 'error' && !(status[h.id] as AccountStatus).loggedIn && (
+                <button className="link" onClick={() => onLogin(h.id)}>
+                  Sign in
+                </button>
+              )}
               {!h.builtin && (
                 <>
                   <button className="link" onClick={() => setDraft({ ...h })}>
@@ -104,6 +140,9 @@ export function HarnessManager({ onClose }: { onClose: () => void }) {
         {draft ? (
           <div className="hm-form">
             <div className="hm-row">
+              {draft.type === 'claude-code' ? (
+                <span className="hm-label">Claude account</span>
+              ) : (
               <select
                 value={draft.type}
                 disabled={!!draft.id}
@@ -115,6 +154,7 @@ export function HarnessManager({ onClose }: { onClose: () => void }) {
                   </option>
                 ))}
               </select>
+              )}
               <input placeholder="Name" value={draft.name} onChange={(e) => setDraft({ ...draft, name: e.target.value })} />
             </div>
             {FIELDS[draft.type].map((f) => (
@@ -145,9 +185,35 @@ export function HarnessManager({ onClose }: { onClose: () => void }) {
             >
               Add harness
             </button>
+            <button className="action" onClick={() => setNewAccount('')}>
+              Add Claude account
+            </button>
             <button className="action" onClick={() => void detect()}>
               Find local model servers
             </button>
+          </div>
+        )}
+        {newAccount !== null && (
+          <div className="hm-form">
+            <div className="hm-row">
+              <span className="hm-label">Account</span>
+              <input
+                autoFocus
+                placeholder="A name for it, e.g. Work"
+                value={newAccount}
+                onChange={(e) => setNewAccount(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter') void addAccount();
+                  if (e.key === 'Escape') setNewAccount(null);
+                }}
+              />
+              <button className="action primary" onClick={() => void addAccount()}>
+                Add &amp; sign in
+              </button>
+            </div>
+            <p className="muted small">
+              It gets its own Claude folder — sign-in, settings, memory, history and folder trust are separate from your main account.
+            </p>
           </div>
         )}
 

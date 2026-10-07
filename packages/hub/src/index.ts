@@ -7,7 +7,7 @@ import { makeDispatch } from './methods.ts';
 import { dataDir, dbPath, discoveryPath, ensureDirs } from './paths.ts';
 import { startServer, type Server } from './server.ts';
 import { Terminals } from './terminals.ts';
-import { ClaudeHarness, HARNESS_ID } from './claude.ts';
+import { ClaudeHarness, HARNESS_ID, projectsRoot } from './claude.ts';
 import { History } from './history.ts';
 import { Ideas } from './ideas.ts';
 import { Changelog } from './changelog.ts';
@@ -62,7 +62,11 @@ async function main(): Promise<void> {
     "INSERT OR IGNORE INTO harnesses (id, type, name, created_at) VALUES (?, 'claude-code', 'Claude Code', ?)",
   ).run(HARNESS_ID, Date.now());
   const claude = new ClaudeHarness(terms, () => server?.port ?? 0);
-  const history = new History(db);
+  // Every Claude account's transcripts are searchable (harnesses is created below).
+  let harnessesRef: Harnesses | null = null;
+  const history = new History(db, () =>
+    harnessesRef ? harnessesRef.accounts().map((a) => projectsRoot(a.configDir)) : [projectsRoot()],
+  );
   const ideas = new Ideas(db, terms, claude, (idea) => server?.broadcast({ event: 'idea.update', data: idea }));
   const changelog = new Changelog(db, (projectId) =>
     server?.broadcast({ event: 'changelog.update', data: { projectId } }),
@@ -91,6 +95,7 @@ async function main(): Promise<void> {
     changelog.session(r.ref_key.slice('session:'.length));
   }
   const harnesses = new Harnesses(db, terms, claude);
+  harnessesRef = harnesses;
   const dispatch = makeDispatch(db, terms, claude, history, ideas, changelog, errors, harnesses, {
     version: VERSION,
     pid: process.pid,

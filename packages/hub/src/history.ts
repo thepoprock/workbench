@@ -4,7 +4,6 @@ import { basename, join } from 'node:path';
 import type { SearchHit } from '@workbench/shared';
 import type { DB } from './db/index.ts';
 
-const CLAUDE_PROJECTS = join(homedir(), '.claude', 'projects');
 const REFRESH_MIN_MS = 15_000; // a search re-scans transcripts at most this often
 const READ_SLICE = 16 * 1024 * 1024; // bytes read per step when catching up on a file
 const PER_SOURCE = 300; // FTS rows fetched per source before de-duplicating
@@ -43,7 +42,11 @@ export class History {
   private lastRefresh = 0;
   private refreshing: Promise<void> | null = null;
 
-  constructor(private db: DB) {}
+  // roots(): every Claude account's projects folder.
+  constructor(
+    private db: DB,
+    private roots: () => string[],
+  ) {}
 
   // Catch up on every transcript under ~/.claude/projects (append-only files,
   // so we resume each from the byte offset where we stopped).
@@ -56,9 +59,14 @@ export class History {
   }
 
   private async scan(): Promise<void> {
-    if (!existsSync(CLAUDE_PROJECTS)) return;
-    for (const dir of readdirSync(CLAUDE_PROJECTS)) {
-      const full = join(CLAUDE_PROJECTS, dir);
+    for (const root of this.roots()) {
+      if (existsSync(root)) await this.scanRoot(root);
+    }
+  }
+
+  private async scanRoot(root: string): Promise<void> {
+    for (const dir of readdirSync(root)) {
+      const full = join(root, dir);
       let names: string[];
       try {
         names = readdirSync(full).filter((f) => f.endsWith('.jsonl'));

@@ -5,7 +5,7 @@ import { createReadStream, existsSync, readdirSync, statSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { basename, join } from 'node:path';
 import { createInterface } from 'node:readline';
-import type { AgentState, ClaudeTranscript, LocalClaudeSession, TermSession } from '@workbench/shared';
+import type { AccountStatus, AgentState, ClaudeTranscript, LocalClaudeSession, TermSession } from '@workbench/shared';
 import { stripAnsi } from './text.ts';
 import type { Terminals } from './terminals.ts';
 
@@ -47,8 +47,16 @@ const HOOK_SETTINGS = JSON.stringify({
 const MAX_FIELD = 2000; // truncate strings stored in event payloads
 const HISTORY_LIMIT = 50;
 
-export const transcriptDir = (cwd: string) =>
-  join(homedir(), '.claude', 'projects', cwd.replace(/[^a-zA-Z0-9]/g, '-'));
+// A Claude account = a config folder (undefined = the main ~/.claude login).
+export interface ClaudeAccount {
+  harnessId: string;
+  configDir?: string;
+}
+
+export const projectsRoot = (configDir?: string) => join(configDir ?? join(homedir(), '.claude'), 'projects');
+export const transcriptDir = (cwd: string, configDir?: string) =>
+  join(projectsRoot(configDir), cwd.replace(/[^a-zA-Z0-9]/g, '-'));
+const accountEnv = (configDir?: string): Record<string, string> => (configDir ? { CLAUDE_CONFIG_DIR: configDir } : {});
 
 // Resolve `claude` the way the user's login shell would.
 function findClaude(): string | null {
@@ -66,7 +74,7 @@ type Hook = Record<string, unknown> & { hook_event_name?: string };
 export class ClaudeHarness {
   private claudePath: string | null | undefined;
   private hookTokens = new Map<string, Buffer>(); // workbench session id → token
-  private historyCache = new Map<string, { key: string; t: ClaudeTranscript | null }>();
+  private historyCache = new Map<string, { key: string; t: Omit<ClaudeTranscript, 'harnessId'> | null }>();
 
   onTurn: (sessionId: string) => void = () => {}; // a turn finished (Stop hook)
   onToolFailure: (session: TermSession, hook: Record<string, unknown>) => void = () => {};
@@ -89,10 +97,10 @@ export class ClaudeHarness {
     cwd: string | undefined,
     cols: number,
     rows: number,
-    opts: { resume?: string; prompt?: string; remoteName?: string } = {},
+    opts: { resume?: string; prompt?: string; remoteName?: string; account?: ClaudeAccount } = {},
   ): TermSession {
     const claudePath = this.claude();
-    const { resume, prompt, remoteName } = opts;
+    const { resume, prompt, remoteName, account } = opts;
     const id = randomUUID();
     const hookEnv = this.registerHooks(id);
     const externalId = resume ?? randomUUID();
@@ -110,10 +118,10 @@ export class ClaudeHarness {
         rows,
         {
           kind: 'agent',
-          harness: HARNESS_ID,
+          harness: account?.harnessId ?? HARNESS_ID,
           file: shell,
           args: ['-l', '-c', 'exec "$0" "$@"', claudePath, ...claudeArgs],
-          env: hookEnv,
+          env: { ...hookEnv, ...accountEnv(account?.configDir) },
           title: 'Claude',
           agent: { state: 'starting', activity: null, externalId, remoteUrl: null },
         },
@@ -123,6 +131,41 @@ export class ClaudeHarness {
       this.unregisterHooks(id);
       throw err;
     }
+  }
+
+  // Signed in? As whom? (`claude auth status` under the account's folder.)
+  async status(configDir?: string): Promise<AccountStatus> {
+    // Exits 1 when signed out but still prints the JSON (verified on 2.1.288).
+    let stdout: string;
+    try {
+      ({ stdout } = await run(this.claude(), ['auth', 'status'], {
+        timeout: 15_000,
+        env: { ...process.env, ...accountEnv(configDir) },
+      }));
+    } catch (err) {
+      stdout = (err as { stdout?: string }).stdout ?? '';
+      if (!stdout.trim().startsWith('{')) throw err;
+    }
+    const d = JSON.parse(stdout) as { loggedIn?: boolean; email?: string; authMethod?: string };
+    return { loggedIn: !!d.loggedIn, email: d.email ?? null, authMethod: d.authMethod ?? null };
+  }
+
+  // A pane running the interactive login for one account.
+  login(account: ClaudeAccount, projectId: string, cols: number, rows: number): TermSession {
+    const shell = process.env.SHELL || '/bin/zsh';
+    return this.terms.create(projectId, undefined, cols, rows, {
+      kind: 'terminal',
+      harness: null,
+      file: shell,
+      args: ['-l', '-c', 'exec "$0" "$@"', this.claude(), 'auth', 'login'],
+      env: accountEnv(account.configDir),
+      title: 'Claude sign-in',
+    });
+  }
+
+  // Which account's folder holds this conversation's transcript?
+  accountOf(transcriptId: string, cwd: string, accounts: ClaudeAccount[]): ClaudeAccount | null {
+    return accounts.find((a) => existsSync(join(transcriptDir(cwd, a.configDir), `${transcriptId}.jsonl`))) ?? null;
   }
 
   // Watch a Claude pane's output for its Remote Control link (it can arrive split).
@@ -266,16 +309,19 @@ export class ClaudeHarness {
     return 204;
   }
 
-  // Past conversations for a project folder, newest first.
-  async history(cwd: string): Promise<ClaudeTranscript[]> {
-    const dir = transcriptDir(cwd);
-    if (!existsSync(dir)) return [];
-    const files = readdirSync(dir)
-      .filter((f) => f.endsWith('.jsonl'))
-      .map((f) => {
-        const path = join(dir, f);
-        const st = statSync(path);
-        return { path, mtime: st.mtimeMs, size: st.size };
+  // Past conversations for a project folder across all accounts, newest first.
+  async history(cwd: string, accounts: ClaudeAccount[]): Promise<ClaudeTranscript[]> {
+    const files = accounts
+      .flatMap((a) => {
+        const dir = transcriptDir(cwd, a.configDir);
+        if (!existsSync(dir)) return [];
+        return readdirSync(dir)
+          .filter((f) => f.endsWith('.jsonl'))
+          .map((f) => {
+            const path = join(dir, f);
+            const st = statSync(path);
+            return { path, mtime: st.mtimeMs, size: st.size, harnessId: a.harnessId };
+          });
       })
       .sort((a, b) => b.mtime - a.mtime)
       .slice(0, HISTORY_LIMIT);
@@ -288,7 +334,7 @@ export class ClaudeHarness {
         cached = { key, t: await readTranscript(f.path, f.mtime, f.size) };
         this.historyCache.set(f.path, cached);
       }
-      if (cached.t) out.push(cached.t);
+      if (cached.t) out.push({ ...cached.t, harnessId: f.harnessId });
     }
     return out;
   }
@@ -324,7 +370,7 @@ function userText(content: unknown): string | null {
 
 // One pass over a transcript: last ai-title, first real user prompt, first timestamp.
 // Lines are prefiltered by substring so large transcripts aren't fully JSON-parsed.
-async function readTranscript(path: string, mtime: number, size: number): Promise<ClaudeTranscript | null> {
+async function readTranscript(path: string, mtime: number, size: number): Promise<Omit<ClaudeTranscript, 'harnessId'> | null> {
   let title: string | null = null;
   let firstPrompt: string | null = null;
   let startedAt: number | null = null;

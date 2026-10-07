@@ -75,6 +75,17 @@ export function makeDispatch(
     return toProject(row);
   };
 
+  // The account a Claude conversation belongs to: the session that last ran it,
+  // else whichever account's folder holds its transcript.
+  const resumeAccount = (projectId: string, externalId: string): string | undefined => {
+    const ran = db
+      .prepare('SELECT harness_id FROM sessions WHERE external_id = ? AND harness_id IS NOT NULL ORDER BY started_at DESC LIMIT 1')
+      .get(externalId) as { harness_id: string } | undefined;
+    if (ran) return ran.harness_id;
+    const root = getProject(projectId).root_path;
+    return root ? claude.accountOf(externalId, root, harnesses.accounts())?.harnessId : undefined;
+  };
+
   const handlers: Handlers = {
     'hub.info': () => ({ ...info, protocol: PROTOCOL_VERSION, schemaVersion: schemaVersion(db) }),
 
@@ -141,9 +152,15 @@ export function makeDispatch(
           .list(projectId)
           .find((s) => s.status === 'running' && s.agent?.externalId === resume);
         if (open) return open; // already running here: the UI focuses it
+        // A conversation resumes on the account it lives in.
+        harnessId ??= resumeAccount(projectId, resume);
       }
       return harnesses.start(projectId, harnessId, cols, rows, resume);
     },
+    'account.add': ({ name }) => harnesses.addAccount(name),
+    'account.status': ({ harnessId }) => claude.status(harnesses.account(harnessId).configDir),
+    'account.login': ({ harnessId, projectId, cols, rows }) =>
+      claude.login(harnesses.account(harnessId), projectId, cols, rows),
     'local.sessions': () => claude.localSessions(),
     'local.attach': ({ id, projectId, cols, rows }) => claude.attach(id, projectId, cols, rows),
     'local.stop': ({ id }) => claude.stop(id),
@@ -153,7 +170,7 @@ export function makeDispatch(
     'harness.detect': () => harnesses.detect(),
     'agent.history': ({ projectId }) => {
       const root = getProject(projectId).root_path;
-      return root ? claude.history(root) : [];
+      return root ? claude.history(root, harnesses.accounts()) : [];
     },
 
     'idea.list': ({ includeArchived }) => ideas.list(includeArchived),

@@ -30,12 +30,19 @@ interface Props {
 export function Agents({ onRemote, project, sessions, canOpen, onOpen, onStart }: Props) {
   const [showHistory, setShowHistory] = useState(false);
   const [history, setHistory] = useState<ClaudeTranscript[] | null>(null);
+  const [accountNames, setAccountNames] = useState<Record<string, string>>({});
   const endedCount = sessions.filter((s) => s.status !== 'running').length;
 
   // Reload when opened, and when an agent ends (its transcript just changed).
   useEffect(() => {
     if (!showHistory) return;
     let cancelled = false;
+    // Label conversations by account when there is more than one.
+    hub.call('harness.list', {}).then((hs) => {
+      const claude = hs.filter((h) => h.type === 'claude-code');
+      if (!cancelled && claude.length > 1)
+        setAccountNames(Object.fromEntries(claude.map((h) => [h.id, h.name.replace(/^Claude Code( · )?/, '') || 'Main'])));
+    });
     hub.call('agent.history', { projectId: project.id }).then(
       (h) => !cancelled && setHistory(h),
       () => !cancelled && setHistory([]),
@@ -126,7 +133,10 @@ export function Agents({ onRemote, project, sessions, canOpen, onOpen, onStart }
                   <span className="agent-title">
                     {openIds.has(h.id) && <span className="dot agent-idle" />} {h.title}
                   </span>
-                  <span className="agent-activity">{ago(h.updatedAt)} · resume</span>
+                  <span className="agent-activity">
+                    {ago(h.updatedAt)}
+                    {accountNames[h.harnessId] ? ` · ${accountNames[h.harnessId]}` : ''} · resume
+                  </span>
                 </span>
               </button>
             </li>

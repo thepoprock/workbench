@@ -392,7 +392,22 @@ export function App() {
           </div>
         )}
       </main>
-      {managingHarnesses && <HarnessManager onClose={() => setManagingHarnesses(false)} />}
+      {managingHarnesses && (
+        <HarnessManager
+          onClose={() => setManagingHarnesses(false)}
+          onLogin={(harnessId) => {
+            if (!current || !dock) return setError('Open a project first — the sign-in runs in one of its panes.');
+            void hub.call('account.login', { harnessId, projectId: current.id, cols: 100, rows: 30 }).then(
+              (s) => {
+                putSessions([s]);
+                openTerminal(dock, s.id, s.title);
+                setManagingHarnesses(false);
+              },
+              (err) => setError((err as Error).message),
+            );
+          }}
+        />
+      )}
       {searching && <Search project={current} onOpen={openHit} onClose={() => setSearching(false)} />}
     </div>
   );

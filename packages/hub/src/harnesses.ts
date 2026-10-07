@@ -1,8 +1,9 @@
-import { existsSync } from 'node:fs';
+import { existsSync, mkdirSync } from 'node:fs';
 import { join } from 'node:path';
 import { randomUUID } from 'node:crypto';
 import type { Harness, HarnessType, ModelServer, TermSession } from '@workbench/shared';
-import type { ClaudeHarness } from './claude.ts';
+import type { ClaudeAccount, ClaudeHarness } from './claude.ts';
+import { dataDir } from './paths.ts';
 import type { DB } from './db/index.ts';
 import type { Terminals } from './terminals.ts';
 import { HARNESS_ID } from './claude.ts';
@@ -51,6 +52,32 @@ export class Harnesses {
     seed('local-ollama', 'local-model', 'Local model (Ollama)', { baseUrl: 'http://localhost:11434/v1', model: 'llama3.1' }, 0);
   }
 
+  // Every Claude account: the main login plus each extra config folder.
+  accounts(): ClaudeAccount[] {
+    return this.list()
+      .filter((h) => h.type === 'claude-code')
+      .map((h) => ({ harnessId: h.id, configDir: h.config.configDir || undefined }));
+  }
+
+  account(harnessId: string): ClaudeAccount {
+    const h = this.get(harnessId);
+    if (h.type !== 'claude-code') throw new Error(`${h.name} is not a Claude account`);
+    return { harnessId: h.id, configDir: h.config.configDir || undefined };
+  }
+
+  // A new Claude account: its own config folder (login, settings, history).
+  addAccount(name: string): Harness {
+    const label = name.trim();
+    if (!label) throw new Error('account needs a name');
+    const id = randomUUID();
+    const configDir = join(dataDir, 'accounts', id);
+    mkdirSync(configDir, { recursive: true, mode: 0o700 });
+    this.db
+      .prepare("INSERT INTO harnesses (id, type, name, config, enabled, created_at) VALUES (?, 'claude-code', ?, ?, 1, ?)")
+      .run(id, `Claude Code · ${label}`, JSON.stringify({ configDir }), Date.now());
+    return this.get(id);
+  }
+
   list(): Harness[] {
     return (
       this.db.prepare('SELECT * FROM harnesses WHERE deleted = 0 ORDER BY created_at').all() as unknown as Row[]
@@ -63,12 +90,15 @@ export class Harnesses {
     return toHarness(r);
   }
 
-  save(h: Omit<Harness, 'id' | 'builtin'> & { id?: string }): Harness {
+  save(input: Omit<Harness, 'id' | 'builtin'> & { id?: string }): Harness {
+    let h = input;
     if (!TYPES.includes(h.type)) throw new Error(`unknown harness type ${h.type}`);
     if (!h.name.trim()) throw new Error('harness needs a name');
     if (h.id === HARNESS_ID && h.type !== 'claude-code') throw new Error('Claude Code is built in');
     if (h.id === HARNESS_ID && !h.enabled) throw new Error('Claude Code is always on');
-    if (h.type === 'claude-code' && h.id !== HARNESS_ID) throw new Error('there is one Claude Code harness');
+    if (h.type === 'claude-code' && !h.id) throw new Error('add Claude accounts with "Add Claude account"');
+    // An account's folder is fixed at creation.
+    if (h.type === 'claude-code' && h.id) h = { ...h, config: { ...h.config, configDir: this.get(h.id).config.configDir ?? '' } };
     if (h.type === 'local-model' && (!h.config.baseUrl || !h.config.model)) throw new Error('a local model needs a server URL and a model');
     if (h.type === 'custom' && !h.config.command?.trim()) throw new Error('a custom harness needs a command');
     if (h.type === 'agent-sdk' && h.config.script && !existsSync(h.config.script)) throw new Error(`script not found: ${h.config.script}`);
@@ -103,6 +133,7 @@ export class Harnesses {
       return this.claude.start(projectId, undefined, cols, rows, {
         resume,
         remoteName: h.config.remoteControl === 'off' ? undefined : name,
+        account: { harnessId: h.id, configDir: h.config.configDir || undefined },
       });
     }
     if (resume) throw new Error(`${h.name} can't resume conversations`);

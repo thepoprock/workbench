@@ -92,6 +92,7 @@ export interface Pushes {
 // A past Claude Code conversation, read from ~/.claude/projects/<cwd>/<id>.jsonl.
 export interface ClaudeTranscript {
   id: string;
+  harnessId: string; // the Claude account (harness) whose folder holds it
   title: string;
   firstPrompt: string | null;
   startedAt: number | null;
@@ -163,6 +164,7 @@ export interface ErrorRule {
 export type HarnessType = 'claude-code' | 'agent-sdk' | 'local-model' | 'custom';
 
 // An agent program Workbench can run in a pane. config by type:
+//   claude-code: configDir? (an extra account; absent = your main ~/.claude login)
 //   local-model: baseUrl, model, apiKey?   agent-sdk: script?, model?   custom: command
 export interface Harness {
   id: string;
@@ -171,6 +173,12 @@ export interface Harness {
   enabled: boolean;
   builtin: boolean; // Claude Code: can't be deleted or disabled
   config: Record<string, string>;
+}
+
+export interface AccountStatus {
+  loggedIn: boolean;
+  email: string | null;
+  authMethod: string | null;
 }
 
 export interface ModelServer {
@@ -237,6 +245,11 @@ export interface Methods {
   'local.sessions': { params: Empty; result: LocalClaudeSession[] };
   'local.attach': { params: { id: string; projectId: string; cols: number; rows: number }; result: TermSession };
   'local.stop': { params: { id: string }; result: null };
+  // Claude accounts: each is a Claude Code harness with its own config folder and login.
+  'account.add': { params: { name: string }; result: Harness };
+  'account.status': { params: { harnessId: string }; result: AccountStatus };
+  // Opens a pane running `claude auth login` for that account.
+  'account.login': { params: { harnessId: string; projectId: string; cols: number; rows: number }; result: TermSession };
   'harness.list': { params: Empty; result: Harness[] };
   'harness.save': { params: { harness: Omit<Harness, 'id' | 'builtin'> & { id?: string } }; result: Harness };
   'harness.delete': { params: { id: string }; result: null };
