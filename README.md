@@ -58,8 +58,10 @@ live in `~/Library/Application Support/Workbench/`.
     the work runs on that account — no logging out. **Get token** runs `setup-token` in a
     pane that captures the token into the macOS Keychain (that pane's output is never
     written to disk or indexed); **Paste token** is the fallback.
-  Each account is a choice in **Agents +** and can be a project default; resume uses the
-  account a conversation started on; history and search cover every account.
+  **Credits: ▾** in the title bar picks which account new Claude sessions use (your login
+  or a token account) — everything you start afterwards runs and counts on it; running
+  sessions keep theirs. Separate-folder accounts are picked per conversation in
+  **Agents +** and resume only in their own folder. History and search cover every account.
 - Remote Control: Workbench starts Claude with Remote Control on (named after
   the project; switch off with `remoteControl: "off"` on the Claude Code
   harness), so each session is also reachable from claude.ai and your phone —
