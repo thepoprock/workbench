@@ -161,6 +161,28 @@ export function TerminalPane({ params, api, containerApi }: IDockviewPanelProps<
   return (
     <div className="term-wrap">
       <div className="term-host" ref={host} />
+      {session?.status === 'running' && alternatives.length > 0 && (
+        <button
+          className="account-chip"
+          disabled={!!moving}
+          title="Which account this conversation runs (and bills) on — click to continue it on another"
+          onClick={() =>
+            void window.workbench
+              .menu([
+                { id: '__now', label: `Running on ${accountLabel(current)}`, enabled: false },
+                { type: 'separator' },
+                ...alternatives.map((h) => ({
+                  id: h.id,
+                  label: `Continue on ${accountLabel(h)}${session.agent?.state === 'working' ? ' (interrupts the current reply)' : ''}`,
+                })),
+              ])
+              .then((id) => id && void moveTo(id))
+          }
+        >
+          {moving ? 'Switching…' : `${accountLabel(current)} ▾`}
+        </button>
+      )}
+      {moveError && !limited && <div className="limit-banner"><span className="limit-error">{moveError}</span></div>}
       {limited && (
         <div className="limit-banner">
           <span>
