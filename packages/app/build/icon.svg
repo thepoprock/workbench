@@ -1,0 +1,44 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1024" height="1024" viewBox="0 0 1024 1024">
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#1b1e25"/>
+      <stop offset="1" stop-color="#0b0c10"/>
+    </linearGradient>
+    <linearGradient id="gold" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#f6d77a"/>
+      <stop offset="0.5" stop-color="#d9a93e"/>
+      <stop offset="1" stop-color="#a87822"/>
+    </linearGradient>
+    <linearGradient id="goldHandle" x1="0" y1="0" x2="1" y2="0">
+      <stop offset="0" stop-color="#e9c35e"/>
+      <stop offset="0.5" stop-color="#c8952f"/>
+      <stop offset="1" stop-color="#9c6e1f"/>
+    </linearGradient>
+    <linearGradient id="wood" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#4b4038"/>
+      <stop offset="1" stop-color="#352d27"/>
+    </linearGradient>
+  </defs>
+  <!-- macOS icon grid: 824px rounded square centred in 1024 -->
+  <rect x="100" y="100" width="824" height="824" rx="185" fill="url(#bg)"/>
+  <!-- bench -->
+  <rect x="214" y="660" width="596" height="60" rx="12" fill="url(#wood)"/>
+  <rect x="214" y="660" width="596" height="12" rx="6" fill="#62544a"/>
+  <rect x="266" y="720" width="46" height="120" rx="8" fill="#30281f"/>
+  <rect x="712" y="720" width="46" height="120" rx="8" fill="#30281f"/>
+  <rect x="290" y="782" width="444" height="20" rx="7" fill="#2a231c"/>
+  <!-- gold claw hammer, leaning across the bench (local: handle points down, head on top) -->
+  <g transform="translate(548 352) rotate(38)">
+    <!-- handle: slightly flared grip -->
+    <path d="M-20,0 L20,0 L28,372 Q28,396 0,396 Q-28,396 -28,372 Z" fill="url(#goldHandle)"/>
+    <rect x="-28" y="300" width="56" height="12" rx="6" fill="#9c6e1f" opacity="0.8"/>
+    <!-- head body -->
+    <rect x="-92" y="-62" width="184" height="78" rx="12" fill="url(#gold)"/>
+    <!-- striking face (left) -->
+    <rect x="-142" y="-74" width="58" height="102" rx="14" fill="url(#gold)"/>
+    <rect x="-142" y="-74" width="58" height="16" rx="8" fill="#fbe6a3" opacity="0.6"/>
+    <!-- claw (right), curving up to a split tip -->
+    <path d="M84,-62 C126,-64 154,-84 172,-114 L162,-90 L180,-92 C158,-38 122,8 84,16 Z" fill="url(#gold)"/>
+    <rect x="-92" y="-62" width="184" height="14" rx="7" fill="#fbe6a3" opacity="0.6"/>
+  </g>
+</svg>

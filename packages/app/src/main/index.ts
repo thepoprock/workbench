@@ -155,7 +155,17 @@ handle('shell:reveal', (_e, path: string) => {
   return '';
 });
 
+// Dock icon while running unpackaged (a packaged build takes it from build/icon.icns).
+const ICON = join(__dirname, '../../build/icon.png');
+
 app.whenReady().then(() => {
+  if (process.platform === 'darwin' && !app.isPackaged) {
+    try {
+      app.dock?.setIcon(ICON);
+    } catch {
+      // icon missing: keep Electron's
+    }
+  }
   createWindow();
   app.on('activate', () => {
     if (BrowserWindow.getAllWindows().length === 0) createWindow();
