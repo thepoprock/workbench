@@ -43,6 +43,26 @@ export function openErrors(api: DockviewApi, projectId: string, errorId?: string
   api.addPanel({ id: 'errors', component: 'errors', tabComponent: 'plain', title: 'Errors', params: { projectId, errorId } });
 }
 
+// Swap a pane's session for its successor in the same place (moving a
+// conversation to another account). Closing via the API only detaches.
+export function replaceTerminal(api: DockviewApi, oldId: string, sessionId: string, title: string): void {
+  const old = api.getPanel(oldId);
+  if (!old) return openTerminal(api, sessionId, title);
+  if (api.getPanel(sessionId)) {
+    old.api.close();
+    return api.getPanel(sessionId)!.api.setActive();
+  }
+  api.addPanel({
+    id: sessionId,
+    component: 'terminal',
+    tabComponent: 'terminal',
+    title,
+    params: { sessionId },
+    position: { referencePanel: oldId, direction: 'within' },
+  });
+  old.api.close();
+}
+
 // One Remote pane per project; reopening points it at a new URL.
 export function openRemote(api: DockviewApi, url = 'https://claude.ai/code'): void {
   const existing = api.getPanel('remote');

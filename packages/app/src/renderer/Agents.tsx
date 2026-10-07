@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react';
 import type { ClaudeTranscript, Project, TermSession } from '@workbench/shared';
 import { hub } from './hub.ts';
 import { statusClass } from './sessions.ts';
-import { accountLabel, useAccounts } from './accounts.ts';
+import { accountLabel, mainFolder, useAccounts } from './accounts.ts';
 
 const ago = (t: number) => {
   const s = (Date.now() - t) / 1000;
@@ -21,6 +21,7 @@ const STATE_LABEL: Record<string, string> = {
 
 interface Props {
   onRemote: (url: string) => void;
+  onMove: (s: TermSession, harnessId: string) => void;
   project: Project;
   sessions: TermSession[]; // this project's agent sessions
   canOpen: boolean;
@@ -28,7 +29,7 @@ interface Props {
   onStart: (resume?: string, harnessId?: string) => void;
 }
 
-export function Agents({ onRemote, project, sessions, canOpen, onOpen, onStart }: Props) {
+export function Agents({ onRemote, onMove, project, sessions, canOpen, onOpen, onStart }: Props) {
   const [showHistory, setShowHistory] = useState(false);
   const accounts = useAccounts();
   const multiAccount = accounts.harnesses.filter((h) => h.type === 'claude-code').length > 1;
@@ -90,19 +91,31 @@ export function Agents({ onRemote, project, sessions, canOpen, onOpen, onStart }
               onClick={() => onOpen(s)}
               onContextMenu={(e) => {
                 e.preventDefault();
-                const url = s.agent?.remoteUrl;
-                if (!url) return;
-                void window.workbench
-                  .menu([
-                    { id: 'here', label: 'Open on claude.ai (in Workbench)' },
-                    { id: 'browser', label: 'Open in browser' },
-                    { id: 'copy', label: 'Copy Remote Control link' },
-                  ])
-                  .then((c) => {
-                    if (c === 'here') onRemote(url);
-                    if (c === 'browser') window.open(url); // main process hands it to the browser
-                    if (c === 'copy') void navigator.clipboard.writeText(url);
-                  });
+                const url = s.status === 'running' ? s.agent?.remoteUrl : null;
+                const cur = accountOf(s.harness);
+                // Conversations in the main folder can continue on any account that shares it.
+                const moves =
+                  cur?.type === 'claude-code' && !cur.config.configDir && s.agent?.externalId
+                    ? mainFolder(accounts.harnesses).filter((h) => h.id !== cur.id)
+                    : [];
+                const items = [
+                  ...(url
+                    ? [
+                        { id: 'here', label: 'Open on claude.ai (in Workbench)' },
+                        { id: 'browser', label: 'Open in browser' },
+                        { id: 'copy', label: 'Copy Remote Control link' },
+                      ]
+                    : []),
+                  ...(url && moves.length ? [{ type: 'separator' as const }] : []),
+                  ...moves.map((h) => ({ id: `move:${h.id}`, label: `Continue on ${accountLabel(h)}` })),
+                ];
+                if (!items.length) return;
+                void window.workbench.menu(items).then((c) => {
+                  if (c === 'here' && url) onRemote(url);
+                  if (c === 'browser' && url) window.open(url); // main process hands it to the browser
+                  if (c === 'copy' && url) void navigator.clipboard.writeText(url);
+                  if (c?.startsWith('move:')) onMove(s, c.slice(5));
+                });
               }}
               title={s.agent?.remoteUrl ? `Remote Control on — right-click for the claude.ai link` : (s.agent?.activity ?? s.cwd)}
             >

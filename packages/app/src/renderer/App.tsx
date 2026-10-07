@@ -10,7 +10,7 @@ import { HarnessManager } from './HarnessManager.tsx';
 import { putSessions, statusClass, useProjectSessions } from './sessions.ts';
 import { hub } from './hub.ts';
 import { Projects } from './Projects.tsx';
-import { openChangelog, openErrors, openHistory, openRemote, openTerminal } from './dock.ts';
+import { openChangelog, openErrors, openHistory, openRemote, openTerminal, replaceTerminal } from './dock.ts';
 import { Elsewhere } from './Elsewhere.tsx';
 import { Search } from './Search.tsx';
 import { Workspace } from './Workspace.tsx';
@@ -92,12 +92,18 @@ export function App() {
 
   const pickUsage = async () => {
     if (billable.length < 2) return setManagingHarnesses(true);
+    const failover = (await hub.call('account.failover', {})).mode;
     const choice = await window.workbench.menu([
       ...billable.map((h) => ({ id: h.id, label: `${h.id === accounts.usage ? '✓ ' : '   '}${accountLabel(h)}${h.id === 'claude-code' ? ' (your login)' : ''}` })),
       { type: 'separator' as const },
+      { id: '__failover', label: `${failover === 'auto' ? '✓ ' : '   '}Auto-switch when an account runs out` },
       { id: '__manage', label: 'Manage accounts…' },
     ]);
     if (choice === '__manage') return setManagingHarnesses(true);
+    if (choice === '__failover') {
+      await hub.call('account.failover', { mode: failover === 'auto' ? 'ask' : 'auto' });
+      return;
+    }
     if (choice) await hub.call('account.setUsage', { harnessId: choice }).catch((err) => setError((err as Error).message));
   };
   // While an idea is open, project-specific UI is hidden (but the selection is kept).
@@ -161,6 +167,19 @@ export function App() {
       });
     void refreshCounts();
     return hub.onPush((p) => {
+      if (p.event === 'agent.limit') {
+        const was = accountLabel(accounts.harnesses.find((h) => h.id === p.data.harnessId));
+        const now = p.data.movedTo ? accountLabel(accounts.harnesses.find((h) => h.id === p.data.movedTo!.harness)) : null;
+        window.workbench.notify(
+          `${was} hit its usage limit`,
+          now ? `Moved the conversation to ${now} and switched Credits.` : 'Open the session to continue on another account.',
+        );
+        if (p.data.movedTo) {
+          putSessions([p.data.movedTo]);
+          if (dock) replaceTerminal(dock, p.data.sessionId, p.data.movedTo.id, p.data.movedTo.title);
+        }
+        return;
+      }
       if (p.event !== 'errors.update') return;
       void refreshCounts();
       if (p.data.alert) {
@@ -168,7 +187,7 @@ export function App() {
         window.workbench.notify(`${name}: new error`, p.data.error.title);
       }
     });
-  }, [status, projects]);
+  }, [status, projects, accounts, dock]);
 
   useEffect(() => {
     if (pending && dock && current?.id === pending.projectId) {
@@ -315,6 +334,15 @@ export function App() {
         {current && (
           <Agents
             onRemote={(url) => dock && openRemote(dock, url)}
+            onMove={(s, harnessId) =>
+              void hub.call('agent.move', { sessionId: s.id, harnessId }).then(
+                (next) => {
+                  putSessions([next]);
+                  if (dock) replaceTerminal(dock, s.id, next.id, next.title);
+                },
+                (err) => setError((err as Error).message),
+              )
+            }
             project={current}
             sessions={agents}
             canOpen={!!dock && status === 'connected'}

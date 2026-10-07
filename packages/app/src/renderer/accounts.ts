@@ -30,6 +30,9 @@ export function useAccounts(): State {
   );
 }
 
+// Accounts that share the main folder: the login and token accounts.
+export const mainFolder = (hs: Harness[]) => hs.filter((h) => h.type === 'claude-code' && !h.config.configDir);
+
 // "Main" for the built-in login, else the name after "Claude Code · ".
 export function accountLabel(h: Harness | undefined): string {
   if (!h || h.id === 'claude-code') return 'Main';

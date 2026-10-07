@@ -1,6 +1,6 @@
 import { randomUUID } from 'node:crypto';
 import { existsSync, statSync } from 'node:fs';
-import type { HubInfo, Method, Methods, Project, Request } from '@workbench/shared';
+import type { HubInfo, Method, Methods, Project, Request, TermSession } from '@workbench/shared';
 import { PROTOCOL_VERSION } from '@workbench/shared';
 import { schemaVersion, type DB } from './db/index.ts';
 import { reply, type Client, type Dispatch } from './server.ts';
@@ -38,6 +38,12 @@ const toProject = (r: ProjectRow): Project => ({
   archived: r.archived === 1,
 });
 
+// Operations the hub itself needs (limit failover), filled in by makeDispatch.
+export interface HubOps {
+  moveAgent?: (sessionId: string, harnessId: string) => Promise<TermSession>;
+  failoverMode?: () => 'ask' | 'auto';
+}
+
 export function makeDispatch(
   db: DB,
   terms: Terminals,
@@ -49,7 +55,39 @@ export function makeDispatch(
   harnesses: Harnesses,
   onAccountUpdate: (harnessId: string) => void,
   info: Omit<HubInfo, 'schemaVersion' | 'protocol'>,
+  // Out: the hub wires limit detection to these.
+  exportsOut: HubOps = {},
 ): Dispatch {
+  const failoverMode = (): 'ask' | 'auto' =>
+    ((db.prepare("SELECT value FROM settings WHERE key = 'failover'").get() as { value: string } | undefined)?.value === 'auto'
+      ? 'auto'
+      : 'ask');
+
+  // Stop a Claude conversation's process and resume it on another account that
+  // shares the main folder (where the transcript is). Ideas follow their session.
+  const moveAgent = async (sessionId: string, harnessId: string): Promise<TermSession> => {
+    const s = terms.info(sessionId);
+    const externalId = s.agent?.externalId;
+    if (s.kind !== 'agent' || !externalId) throw new Error('only Claude conversations can move between accounts');
+    const from = s.harness ? harnesses.get(s.harness) : null;
+    if (from?.type !== 'claude-code' || from.config.configDir) throw new Error('this conversation lives in a separate-folder account and can only run there');
+    if (from.id === harnessId) throw new Error(`already on ${from.name}`);
+    const account = await harnesses.mainFolderAccount(harnessId);
+    const size = terms.size(sessionId) ?? { cols: 100, rows: 30 };
+    if (s.status === 'running') await terms.killAndWait(sessionId);
+    const idea = db.prepare('SELECT id, title FROM ideas WHERE session_id = ?').get(sessionId) as { id: string; title: string } | undefined;
+    const projectName = s.projectId ? getProject(s.projectId).name : null;
+    const next = claude.start(s.projectId, s.cwd, size.cols, size.rows, {
+      resume: externalId,
+      remoteName: idea ? `Idea: ${idea.title}` : (projectName ?? undefined),
+      account,
+    });
+    if (idea) db.prepare('UPDATE ideas SET session_id = ? WHERE id = ?').run(next.id, idea.id);
+    return next;
+  };
+  exportsOut.moveAgent = moveAgent;
+  exportsOut.failoverMode = failoverMode;
+
   const getProject = (id: string): ProjectRow => {
     const row = db.prepare('SELECT * FROM projects WHERE id = ?').get(id) as ProjectRow | undefined;
     if (!row) throw new Error('unknown project');
@@ -214,6 +252,14 @@ export function makeDispatch(
     'harness.save': ({ harness }) => harnesses.save(harness),
     'harness.delete': ({ id }) => harnesses.delete(id),
     'harness.detect': () => harnesses.detect(),
+    'agent.move': ({ sessionId, harnessId }) => moveAgent(sessionId, harnessId),
+    'account.failover': ({ mode }) => {
+      if (mode) {
+        if (mode !== 'ask' && mode !== 'auto') throw new Error(`unknown mode ${mode}`);
+        db.prepare("INSERT INTO settings (key, value) VALUES ('failover', ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value").run(mode);
+      }
+      return { mode: failoverMode() };
+    },
     'agent.history': ({ projectId }) => {
       const root = getProject(projectId).root_path;
       return root ? claude.history(root, harnesses.accounts()) : [];

@@ -60,7 +60,11 @@ live in `~/Library/Application Support/Workbench/`.
     written to disk or indexed); **Paste token** is the fallback.
   **Credits: ▾** in the title bar picks which account new Claude sessions use (your login
   or a token account) — everything you start afterwards runs and counts on it; running
-  sessions keep theirs. Separate-folder accounts are picked per conversation in
+  sessions keep theirs — right-click one → **Continue on <account>** to move the
+  conversation (Workbench stops it and resumes it there). When a Claude session hits its
+  usage limit the pane shows a banner to continue on another account; with **Credits ▾ →
+  Auto-switch when an account runs out** it moves itself and switches Credits.
+  Separate-folder accounts are picked per conversation in
   **Agents +** and resume only in their own folder. History and search cover every account.
 - Remote Control: Workbench starts Claude with Remote Control on (named after
   the project; switch off with `remoteControl: "off"` on the Claude Code

@@ -257,6 +257,17 @@ export class Terminals {
     return this.live.get(sessionId)?.ephemeral ?? false;
   }
 
+  size(sessionId: string): { cols: number; rows: number } | null {
+    const s = this.live.get(sessionId);
+    return s ? { cols: s.screen.cols, rows: s.screen.rows } : null;
+  }
+
+  // Kill and wait for the process to be gone (up to 5 s).
+  async killAndWait(sessionId: string): Promise<void> {
+    this.kill(sessionId);
+    for (let i = 0; i < 50 && this.live.get(sessionId)?.proc; i++) await new Promise((r) => setTimeout(r, 100));
+  }
+
   // Claude conversation ids of live agent panes (to mark sessions as ours).
   agentExternalIds(): string[] {
     return [...this.live.values()].flatMap((s) => (s.proc && s.info.agent?.externalId ? [s.info.agent.externalId] : []));

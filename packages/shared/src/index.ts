@@ -42,7 +42,7 @@ export type TermStatus = 'running' | 'exited' | 'lost';
 export type SessionKind = 'terminal' | 'agent';
 
 // Live agent state, driven by harness events (Claude Code hooks).
-export type AgentState = 'starting' | 'working' | 'waiting' | 'idle';
+export type AgentState = 'starting' | 'working' | 'waiting' | 'idle' | 'limited'; // limited: the account ran out
 
 export interface AgentInfo {
   state: AgentState;
@@ -86,6 +86,8 @@ export interface Pushes {
   'idea.update': Idea; // metadata or a file in its folder changed
   'changelog.update': { projectId: string }; // entries added or changed
   'account.update': { harnessId: string }; // sign-in or token changed
+  // A session hit its account's usage limit. movedTo: auto-switch moved it there.
+  'agent.limit': { sessionId: string; harnessId: string | null; movedTo: TermSession | null };
   // An error was recorded or changed. alert = show a notification for it.
   'errors.update': { error: ErrorGroup; alert: boolean };
 }
@@ -275,6 +277,11 @@ export interface Methods {
   // Probes localhost for Ollama / LM Studio / llama.cpp servers and their models.
   'harness.detect': { params: Empty; result: ModelServer[] };
   'agent.history': { params: { projectId: string }; result: ClaudeTranscript[] };
+  // Continue a running Claude conversation on another main-folder account
+  // (stops this process, resumes the conversation there). Returns the new pane's session.
+  'agent.move': { params: { sessionId: string; harnessId: string }; result: TermSession };
+  // When an account runs out: 'ask' (notify) or 'auto' (switch Credits + move the session).
+  'account.failover': { params: { mode?: 'ask' | 'auto' }; result: { mode: 'ask' | 'auto' } };
 
   // Ideas: a folder of markdown files worked up with Claude, then promoted to a project.
   'idea.list': { params: { includeArchived?: boolean }; result: Idea[] };

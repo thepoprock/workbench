@@ -55,6 +55,9 @@ export interface ClaudeAccount {
 }
 
 const TOKEN_RE = /sk-ant-oat\d{2}-[A-Za-z0-9_-]{20,}/;
+// Usage-limit wording found in the Claude Code 2.1.29x binary (not seen live).
+const LIMIT_RE =
+  /(usage limit reached|you(?:'ve| have) hit your (?:usage )?limit|reached your (?:weekly |5-hour |daily )?usage limit|usage credit limit reached|new messages wait for your usage limit to reset)/i;
 
 export const projectsRoot = (configDir?: string) => join(configDir ?? join(homedir(), '.claude'), 'projects');
 export const transcriptDir = (cwd: string, configDir?: string) =>
@@ -84,6 +87,8 @@ export class ClaudeHarness {
 
   onTurn: (sessionId: string) => void = () => {}; // a turn finished (Stop hook)
   onToolFailure: (session: TermSession, hook: Record<string, unknown>) => void = () => {};
+  onLimit: (session: TermSession) => void = () => {};
+  private limitTails = new Map<string, string>();
 
   constructor(
     private terms: Terminals,
@@ -207,11 +212,21 @@ export class ClaudeHarness {
     return accounts.find((a) => existsSync(join(transcriptDir(cwd, a.configDir), `${transcriptId}.jsonl`))) ?? null;
   }
 
-  // Watch a Claude pane's output for its Remote Control link (it can arrive split).
+  // Watch a Claude pane's output for its Remote Control link (it can arrive
+  // split) and for the account running out of usage.
   private tails = new Map<string, string>();
   scanOutput(sessionId: string, data: string): void {
     const s = this.terms.get(sessionId);
-    if (!s?.agent || s.agent.remoteUrl) return;
+    if (!s?.agent) return;
+    if (s.agent.state !== 'limited') {
+      const t = ((this.limitTails.get(sessionId) ?? '') + stripAnsi(data)).slice(-600);
+      if (LIMIT_RE.test(t)) {
+        this.limitTails.delete(sessionId);
+        this.terms.updateAgent(sessionId, { state: 'limited', activity: 'Usage limit reached' });
+        this.onLimit(s);
+      } else this.limitTails.set(sessionId, t);
+    }
+    if (s.agent.remoteUrl) return;
     const text = ((this.tails.get(sessionId) ?? '') + stripAnsi(data)).slice(-400);
     const m = REMOTE_URL_RE.exec(text);
     if (m) {
@@ -273,6 +288,7 @@ export class ClaudeHarness {
   unregisterHooks(sessionId: string): void {
     this.hookTokens.delete(sessionId);
     this.tails.delete(sessionId);
+    this.limitTails.delete(sessionId);
   }
 
   // POST /hook/<session id>. Returns an HTTP status.

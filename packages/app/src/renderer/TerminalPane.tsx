@@ -1,4 +1,4 @@
-import { useEffect, useRef } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import type { IDockviewPanelProps } from 'dockview-react';
 import { Terminal } from '@xterm/xterm';
 import { FitAddon } from '@xterm/addon-fit';
@@ -6,7 +6,9 @@ import { WebglAddon } from '@xterm/addon-webgl';
 import '@xterm/xterm/css/xterm.css';
 import type { TermSession } from '@workbench/shared';
 import { hub } from './hub.ts';
-import { openHistory } from './dock.ts';
+import { openHistory, replaceTerminal } from './dock.ts';
+import { useSession } from './sessions.ts';
+import { accountLabel, mainFolder, useAccounts } from './accounts.ts';
 
 export interface TerminalParams {
   sessionId: string;
@@ -35,6 +37,25 @@ function endNotice(s: TermSession): string | null {
 // unmounting only detaches — the process keeps running in the hub.
 export function TerminalPane({ params, api, containerApi }: IDockviewPanelProps<TerminalParams>) {
   const host = useRef<HTMLDivElement>(null);
+  const session = useSession(params.sessionId);
+  const accounts = useAccounts();
+  const [moving, setMoving] = useState<string | null>(null);
+  const [moveError, setMoveError] = useState<string | null>(null);
+  const limited = session?.status === 'running' && session.agent?.state === 'limited';
+  const current = accounts.harnesses.find((h) => h.id === session?.harness);
+  const alternatives = current && !current.config.configDir ? mainFolder(accounts.harnesses).filter((h) => h.id !== current.id) : [];
+
+  const moveTo = async (harnessId: string) => {
+    setMoving(harnessId);
+    setMoveError(null);
+    try {
+      const next = await hub.call('agent.move', { sessionId: params.sessionId, harnessId });
+      replaceTerminal(containerApi, params.sessionId, next.id, next.title);
+    } catch (err) {
+      setMoving(null);
+      setMoveError((err as Error).message);
+    }
+  };
 
   useEffect(() => {
     const sessionId = params.sessionId;
@@ -140,6 +161,20 @@ export function TerminalPane({ params, api, containerApi }: IDockviewPanelProps<
   return (
     <div className="term-wrap">
       <div className="term-host" ref={host} />
+      {limited && (
+        <div className="limit-banner">
+          <span>
+            <b>{accountLabel(current)}</b> hit its usage limit.
+            {alternatives.length === 0 && ' Add another account (Harnesses → Add Claude account) to keep going.'}
+            {moveError && <span className="limit-error"> {moveError}</span>}
+          </span>
+          {alternatives.map((h) => (
+            <button key={h.id} disabled={!!moving} onClick={() => void moveTo(h.id)}>
+              {moving === h.id ? 'Moving…' : `Continue on ${accountLabel(h)}`}
+            </button>
+          ))}
+        </div>
+      )}
       <button
         className="earlier"
         title="Browse this session's full saved output"

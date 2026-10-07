@@ -109,11 +109,24 @@ export class Harnesses {
 
   // Claude settings for a session in the main folder, on the usage account.
   async usageClaudeAccount(): Promise<ClaudeAccount> {
-    const id = this.usageAccount();
+    return this.mainFolderAccount(this.usageAccount());
+  }
+
+  // A main-folder account ready to launch with: the login itself, or a token account + its token.
+  async mainFolderAccount(id: string): Promise<ClaudeAccount> {
     if (id === HARNESS_ID) return { harnessId: id };
+    const h = this.get(id);
+    if (h.type !== 'claude-code' || h.config.configDir) throw new Error(`${h.name} doesn't use the main Claude folder`);
     const token = await keychainGet(id);
-    if (!token) throw new Error(`${this.get(id).name} is selected for usage but has no token — add one under Harnesses`);
+    if (!token) throw new Error(`${h.name} has no token — add one under Harnesses`);
     return { harnessId: id, token };
+  }
+
+  // Accounts that work in the main folder (login + token accounts), in order.
+  mainFolderAccounts(): string[] {
+    return this.list()
+      .filter((h) => h.type === 'claude-code' && !h.config.configDir)
+      .map((h) => h.id);
   }
 
   // Every Claude account: the main login plus each extra config folder.

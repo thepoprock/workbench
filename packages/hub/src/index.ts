@@ -3,7 +3,7 @@ import { readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { WebSocket } from 'ws';
 import type { HubDiscovery } from '@workbench/shared';
 import { openDb } from './db/index.ts';
-import { makeDispatch } from './methods.ts';
+import { makeDispatch, type HubOps } from './methods.ts';
 import { dataDir, dbPath, discoveryPath, ensureDirs } from './paths.ts';
 import { startServer, type Server } from './server.ts';
 import { Terminals } from './terminals.ts';
@@ -86,7 +86,17 @@ async function main(): Promise<void> {
   terms.onOutput = (s, data) => {
     if (terms.isEphemeral(s.id)) return claude.watchToken(s.id, data);
     if (s.kind === 'terminal') errors.feed(`term:${s.id}`, s.projectId, s.id, data);
-    if (s.harness === HARNESS_ID) claude.scanOutput(s.id, data);
+    if (s.kind === 'agent' && isClaudeAccount(s.harness)) claude.scanOutput(s.id, data);
+  };
+  // Every Claude account's sessions are watched (RC link, usage limit), not just the main login's.
+  const isClaudeAccount = (id: string | null) => {
+    if (!id) return false;
+    if (id === HARNESS_ID) return true;
+    try {
+      return harnessesRef?.get(id).type === 'claude-code';
+    } catch {
+      return false;
+    }
   };
   terms.onEnded = (s, killedByUser) => {
     errors.endStream(`term:${s.id}`);
@@ -104,6 +114,7 @@ async function main(): Promise<void> {
   }
   const harnesses = new Harnesses(db, terms, claude);
   harnessesRef = harnesses;
+  const hubOps: HubOps = {};
   const dispatch = makeDispatch(
     db, terms, claude, history, ideas, changelog, errors, harnesses,
     (harnessId) => server?.broadcast({ event: 'account.update', data: { harnessId } }),
@@ -114,7 +125,33 @@ async function main(): Promise<void> {
     dbPath,
     node: process.version,
     },
+    hubOps,
   );
+
+  // An account ran out: tell the UI, or (auto) switch Credits to the next
+  // main-folder account with a token and move the conversation there.
+  const limitedAt = new Map<string, number>(); // account → when it last hit its limit
+  claude.onLimit = (s) => {
+    const from = s.harness ?? HARNESS_ID;
+    limitedAt.set(from, Date.now());
+    void (async () => {
+      let movedTo = null;
+      if (hubOps.failoverMode?.() === 'auto') {
+        const fresh = (id: string) => Date.now() - (limitedAt.get(id) ?? 0) > 5 * 3600_000;
+        for (const id of harnesses.mainFolderAccounts().filter((x) => x !== from && fresh(x))) {
+          try {
+            movedTo = await hubOps.moveAgent!(s.id, id);
+            harnesses.setUsageAccount(id);
+            server?.broadcast({ event: 'account.update', data: { harnessId: id } });
+            break;
+          } catch (err) {
+            log(`failover to ${id} failed: ${(err as Error).message}`);
+          }
+        }
+      }
+      server?.broadcast({ event: 'agent.limit', data: { sessionId: s.id, harnessId: s.harness, movedTo } });
+    })();
+  };
 
   const token = randomBytes(32).toString('hex');
   server = await startServer(
