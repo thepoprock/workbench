@@ -47,12 +47,19 @@ live in `~/Library/Application Support/Workbench/`.
   commands. **Agents +** offers every enabled harness; a project's right-click
   menu sets its default (what ⌘⇧A starts). Any program can be a harness by
   POSTing the events documented in `packages/runner/events.mjs`.
-- Claude accounts: **Harnesses… → Add Claude account** gives a second (third…)
-  Claude login its own config folder (`CLAUDE_CONFIG_DIR` under Workbench's data
-  folder) — separate sign-in, settings, memory, history and folder trust. Each
-  account is a choice in **Agents +** and can be a project's default; resuming a
-  conversation always uses the account it started on; history and search cover
-  every account. A new account runs Claude's first-run setup once.
+- Claude accounts (**Harnesses… → Add Claude account**), two kinds:
+  - **Separate folder**: own Claude folder (`CLAUDE_CONFIG_DIR`) and sign-in. Per-account
+    switches link parts of your main `~/.claude` in: *Instructions & settings*
+    (CLAUDE.md, settings, hooks), *Agents, commands & skills*, *History & memory*
+    (`projects/`). A switch refuses (and changes nothing) if the account already has its
+    own copy.
+  - **Main folder + token**: runs in your main `~/.claude` with the account's
+    `claude setup-token` token (`CLAUDE_CODE_OAUTH_TOKEN`), so everything is shared while
+    the work runs on that account — no logging out. **Get token** runs `setup-token` in a
+    pane that captures the token into the macOS Keychain (that pane's output is never
+    written to disk or indexed); **Paste token** is the fallback.
+  Each account is a choice in **Agents +** and can be a project default; resume uses the
+  account a conversation started on; history and search cover every account.
 - Remote Control: Workbench starts Claude with Remote Control on (named after
   the project; switch off with `remoteControl: "off"` on the Claude Code
   harness), so each session is also reachable from claude.ai and your phone —

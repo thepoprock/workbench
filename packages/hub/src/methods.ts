@@ -4,6 +4,7 @@ import type { HubInfo, Method, Methods, Project, Request } from '@workbench/shar
 import { PROTOCOL_VERSION } from '@workbench/shared';
 import { schemaVersion, type DB } from './db/index.ts';
 import { reply, type Client, type Dispatch } from './server.ts';
+import { keychainGet, keychainSet } from './keychain.ts';
 import type { ClaudeHarness } from './claude.ts';
 import type { History } from './history.ts';
 import type { Ideas } from './ideas.ts';
@@ -46,6 +47,7 @@ export function makeDispatch(
   changelog: Changelog,
   errors: Errors,
   harnesses: Harnesses,
+  onAccountUpdate: (harnessId: string) => void,
   info: Omit<HubInfo, 'schemaVersion' | 'protocol'>,
 ): Dispatch {
   const getProject = (id: string): ProjectRow => {
@@ -157,10 +159,35 @@ export function makeDispatch(
       }
       return harnesses.start(projectId, harnessId, cols, rows, resume);
     },
-    'account.add': ({ name }) => harnesses.addAccount(name),
-    'account.status': ({ harnessId }) => claude.status(harnesses.account(harnessId).configDir),
-    'account.login': ({ harnessId, projectId, cols, rows }) =>
-      claude.login(harnesses.account(harnessId), projectId, cols, rows),
+    'account.add': ({ name, mode }) => harnesses.addAccount(name, mode),
+    'account.share': ({ harnessId, group, shared }) => harnesses.share(harnessId, group, shared),
+    'account.status': async ({ harnessId }) => {
+      const a = harnesses.account(harnessId);
+      if (!a.tokenMode) return claude.status(a.configDir);
+      const token = await keychainGet(harnessId);
+      if (!token) return { loggedIn: false, email: null, authMethod: null, tokenHint: null };
+      return { ...(await claude.status(undefined, token)), tokenHint: token.slice(-4) };
+    },
+    'account.setToken': async ({ harnessId, token }) => {
+      if (!harnesses.account(harnessId).tokenMode) throw new Error('only token accounts take a token');
+      const t = token.trim();
+      if (!/^sk-ant-oat\d{2}-[A-Za-z0-9_-]{20,}$/.test(t)) throw new Error("that doesn't look like a setup-token (sk-ant-oat…)");
+      await keychainSet(harnessId, t);
+      onAccountUpdate(harnessId);
+      return { ...(await claude.status(undefined, t)), tokenHint: t.slice(-4) };
+    },
+    'account.tokenPane': ({ harnessId, projectId, cols, rows }) => {
+      if (!harnesses.account(harnessId).tokenMode) throw new Error('only token accounts take a token');
+      return claude.tokenPane(harnessId, projectId, cols, rows, (t) => {
+        void keychainSet(harnessId, t).then(() => onAccountUpdate(harnessId));
+      });
+    },
+    'account.login': ({ harnessId, projectId, cols, rows }) => {
+      const a = harnesses.account(harnessId);
+      // A token account has no folder: logging in would switch the MAIN account.
+      if (a.tokenMode) throw new Error('token accounts use a setup-token, not a sign-in');
+      return claude.login(a, projectId, cols, rows);
+    },
     'local.sessions': () => claude.localSessions(),
     'local.attach': ({ id, projectId, cols, rows }) => claude.attach(id, projectId, cols, rows),
     'local.stop': ({ id }) => claude.stop(id),

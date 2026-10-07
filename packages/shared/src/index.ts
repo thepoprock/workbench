@@ -85,6 +85,7 @@ export interface Pushes {
   'term.update': TermSession; // to everyone: status/title changes
   'idea.update': Idea; // metadata or a file in its folder changed
   'changelog.update': { projectId: string }; // entries added or changed
+  'account.update': { harnessId: string }; // sign-in or token changed
   // An error was recorded or changed. alert = show a notification for it.
   'errors.update': { error: ErrorGroup; alert: boolean };
 }
@@ -173,12 +174,22 @@ export interface Harness {
   enabled: boolean;
   builtin: boolean; // Claude Code: can't be deleted or disabled
   config: Record<string, string>;
+  // Folder accounts: which parts of the main ~/.claude are linked in.
+  sharing?: Record<ShareGroup, boolean>;
 }
+
+// What a separate-folder account can share with the main ~/.claude:
+//   instructions: CLAUDE.md, settings, hooks   extensions: agents, commands, skills, plugins
+//   history: projects/ (conversations + per-project memory)
+export type ShareGroup = 'instructions' | 'extensions' | 'history';
+// folder: own config folder and sign-in. token: main folder, secondary account's setup-token.
+export type AccountMode = 'folder' | 'token';
 
 export interface AccountStatus {
   loggedIn: boolean;
   email: string | null;
   authMethod: string | null;
+  tokenHint?: string | null; // token accounts: last characters of the saved token
 }
 
 export interface ModelServer {
@@ -246,7 +257,12 @@ export interface Methods {
   'local.attach': { params: { id: string; projectId: string; cols: number; rows: number }; result: TermSession };
   'local.stop': { params: { id: string }; result: null };
   // Claude accounts: each is a Claude Code harness with its own config folder and login.
-  'account.add': { params: { name: string }; result: Harness };
+  'account.add': { params: { name: string; mode: AccountMode }; result: Harness };
+  'account.share': { params: { harnessId: string; group: ShareGroup; shared: boolean }; result: Harness };
+  // Token accounts: save a setup-token (Keychain), or open a pane that runs
+  // `claude setup-token` and captures the token itself (nothing written to disk).
+  'account.setToken': { params: { harnessId: string; token: string }; result: AccountStatus };
+  'account.tokenPane': { params: { harnessId: string; projectId: string; cols: number; rows: number }; result: TermSession };
   'account.status': { params: { harnessId: string }; result: AccountStatus };
   // Opens a pane running `claude auth login` for that account.
   'account.login': { params: { harnessId: string; projectId: string; cols: number; rows: number }; result: TermSession };

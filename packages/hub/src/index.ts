@@ -78,11 +78,13 @@ async function main(): Promise<void> {
   // Output rules run on shells only: agent screens redraw constantly (counts
   // would inflate) and agents report failures through their hooks anyway.
   terms.onOutput = (s, data) => {
+    if (terms.isEphemeral(s.id)) return claude.watchToken(s.id, data);
     if (s.kind === 'terminal') errors.feed(`term:${s.id}`, s.projectId, s.id, data);
     if (s.harness === HARNESS_ID) claude.scanOutput(s.id, data);
   };
   terms.onEnded = (s, killedByUser) => {
     errors.endStream(`term:${s.id}`);
+    claude.endTokenWatch(s.id);
     if (s.kind !== 'agent') return;
     claude.unregisterHooks(s.id);
     changelog.session(s.id);
@@ -96,13 +98,17 @@ async function main(): Promise<void> {
   }
   const harnesses = new Harnesses(db, terms, claude);
   harnessesRef = harnesses;
-  const dispatch = makeDispatch(db, terms, claude, history, ideas, changelog, errors, harnesses, {
+  const dispatch = makeDispatch(
+    db, terms, claude, history, ideas, changelog, errors, harnesses,
+    (harnessId) => server?.broadcast({ event: 'account.update', data: { harnessId } }),
+    {
     version: VERSION,
     pid: process.pid,
     startedAt,
     dbPath,
     node: process.version,
-  });
+    },
+  );
 
   const token = randomBytes(32).toString('hex');
   server = await startServer(

@@ -1,7 +1,9 @@
-import { existsSync, mkdirSync } from 'node:fs';
+import { existsSync, lstatSync, mkdirSync, readdirSync, readlinkSync, rmdirSync, symlinkSync, unlinkSync } from 'node:fs';
+import { homedir } from 'node:os';
 import { join } from 'node:path';
 import { randomUUID } from 'node:crypto';
-import type { Harness, HarnessType, ModelServer, TermSession } from '@workbench/shared';
+import type { AccountMode, Harness, HarnessType, ModelServer, ShareGroup, TermSession } from '@workbench/shared';
+import { keychainDelete, keychainGet } from './keychain.ts';
 import type { ClaudeAccount, ClaudeHarness } from './claude.ts';
 import { dataDir } from './paths.ts';
 import type { DB } from './db/index.ts';
@@ -13,6 +15,32 @@ import { HARNESS_ID } from './claude.ts';
 // the same for all of them (protocol: packages/runner/events.mjs).
 
 const RUNNER_DIR = join(import.meta.dirname, '..', '..', 'runner');
+const MAIN_CLAUDE = join(homedir(), '.claude');
+
+// What each sharing switch links from the main ~/.claude into an account folder.
+// Never ~/.claude.json: that holds the account's identity and folder trust.
+const SHARE_ITEMS: Record<ShareGroup, string[]> = {
+  instructions: ['CLAUDE.md', 'settings.json', 'settings.local.json', 'hooks'],
+  extensions: ['agents', 'commands', 'skills', 'plugins'],
+  history: ['projects'],
+};
+
+function isLinkTo(path: string, target: string): boolean {
+  try {
+    return lstatSync(path).isSymbolicLink() && readlinkSync(path) === target;
+  } catch {
+    return false;
+  }
+}
+
+function sharingOf(configDir: string): Record<ShareGroup, boolean> {
+  const out = {} as Record<ShareGroup, boolean>;
+  for (const [group, items] of Object.entries(SHARE_ITEMS) as [ShareGroup, string[]][]) {
+    const present = items.filter((i) => existsSync(join(MAIN_CLAUDE, i)));
+    out[group] = present.length > 0 && present.every((i) => isLinkTo(join(configDir, i), join(MAIN_CLAUDE, i)));
+  }
+  return out;
+}
 const TYPES: HarnessType[] = ['claude-code', 'agent-sdk', 'local-model', 'custom'];
 
 const KNOWN_SERVERS = [
@@ -29,14 +57,18 @@ interface Row {
   enabled: number;
 }
 
-const toHarness = (r: Row): Harness => ({
-  id: r.id,
-  type: r.type,
-  name: r.name,
-  enabled: r.id === HARNESS_ID ? true : r.enabled === 1,
-  builtin: r.id === HARNESS_ID,
-  config: JSON.parse(r.config),
-});
+const toHarness = (r: Row): Harness => {
+  const config = JSON.parse(r.config) as Record<string, string>;
+  return {
+    id: r.id,
+    type: r.type,
+    name: r.name,
+    enabled: r.id === HARNESS_ID ? true : r.enabled === 1,
+    builtin: r.id === HARNESS_ID,
+    config,
+    ...(r.type === 'claude-code' && config.configDir ? { sharing: sharingOf(config.configDir) } : {}),
+  };
+};
 
 export class Harnesses {
   constructor(
@@ -59,23 +91,67 @@ export class Harnesses {
       .map((h) => ({ harnessId: h.id, configDir: h.config.configDir || undefined }));
   }
 
-  account(harnessId: string): ClaudeAccount {
+  account(harnessId: string): ClaudeAccount & { tokenMode: boolean } {
     const h = this.get(harnessId);
     if (h.type !== 'claude-code') throw new Error(`${h.name} is not a Claude account`);
-    return { harnessId: h.id, configDir: h.config.configDir || undefined };
+    return { harnessId: h.id, configDir: h.config.configDir || undefined, tokenMode: h.config.mode === 'token' };
   }
 
-  // A new Claude account: its own config folder (login, settings, history).
-  addAccount(name: string): Harness {
+  // folder: its own config folder (sign-in, settings, history; sharing optional).
+  // token:  runs in the main ~/.claude with the account's setup-token — shares everything.
+  addAccount(name: string, mode: AccountMode): Harness {
     const label = name.trim();
     if (!label) throw new Error('account needs a name');
+    if (mode !== 'folder' && mode !== 'token') throw new Error(`unknown account mode ${mode}`);
     const id = randomUUID();
-    const configDir = join(dataDir, 'accounts', id);
-    mkdirSync(configDir, { recursive: true, mode: 0o700 });
+    let config: Record<string, string> = { mode: 'token' };
+    if (mode === 'folder') {
+      const configDir = join(dataDir, 'accounts', id);
+      mkdirSync(configDir, { recursive: true, mode: 0o700 });
+      config = { mode: 'folder', configDir };
+    }
     this.db
       .prepare("INSERT INTO harnesses (id, type, name, config, enabled, created_at) VALUES (?, 'claude-code', ?, ?, 1, ?)")
-      .run(id, `Claude Code · ${label}`, JSON.stringify({ configDir }), Date.now());
+      .run(id, `Claude Code · ${label}`, JSON.stringify(config), Date.now());
     return this.get(id);
+  }
+
+  // Link (or unlink) a group of the main ~/.claude into a folder account.
+  // Refuses rather than replace anything the account has of its own.
+  share(harnessId: string, group: ShareGroup, shared: boolean): Harness {
+    const h = this.get(harnessId);
+    const dir = h.config.configDir;
+    if (h.type !== 'claude-code' || !dir) throw new Error('only separate-folder accounts have sharing switches');
+    const items = SHARE_ITEMS[group];
+    if (!items) throw new Error(`unknown group ${group}`);
+    if (!shared) {
+      for (const item of items) if (isLinkTo(join(dir, item), join(MAIN_CLAUDE, item))) unlinkSync(join(dir, item));
+      return this.get(harnessId);
+    }
+    // Check every item first, so a refusal leaves the group exactly as it was.
+    const lstat = (p: string) => {
+      try {
+        return lstatSync(p);
+      } catch {
+        return null;
+      }
+    };
+    const todo = items.filter((i) => existsSync(join(MAIN_CLAUDE, i)) && !isLinkTo(join(dir, i), join(MAIN_CLAUDE, i)));
+    const own = todo.filter((i) => {
+      const st = lstat(join(dir, i));
+      return st && !st.isSymbolicLink() && !(st.isDirectory() && readdirSync(join(dir, i)).length === 0);
+    });
+    if (own.length) {
+      throw new Error(`this account already has its own ${own.join(', ')} — move ${own.length > 1 ? 'them' : 'it'} out of ${dir} first, or keep this unshared`);
+    }
+    for (const item of todo) {
+      const dst = join(dir, item);
+      const st = lstat(dst);
+      if (st?.isSymbolicLink()) unlinkSync(dst); // a link to somewhere else: ours to replace
+      else if (st) rmdirSync(dst); // empty folder
+      symlinkSync(join(MAIN_CLAUDE, item), dst);
+    }
+    return this.get(harnessId);
   }
 
   list(): Harness[] {
@@ -113,14 +189,16 @@ export class Harnesses {
     return this.get(id);
   }
 
-  delete(id: string): void {
+  async delete(id: string): Promise<void> {
     if (id === HARNESS_ID) throw new Error('Claude Code is built in');
+    const h = this.get(id);
+    if (h.type === 'claude-code' && h.config.mode === 'token') await keychainDelete(id);
     this.db.prepare('UPDATE projects SET default_harness_id = NULL WHERE default_harness_id = ?').run(id);
     // Soft delete: sessions that ran under it keep their reference.
     this.db.prepare('UPDATE harnesses SET deleted = 1, enabled = 0 WHERE id = ?').run(id);
   }
 
-  start(projectId: string, harnessId: string | undefined, cols: number, rows: number, resume?: string): TermSession {
+  async start(projectId: string, harnessId: string | undefined, cols: number, rows: number, resume?: string): Promise<TermSession> {
     const project = this.db.prepare('SELECT default_harness_id FROM projects WHERE id = ?').get(projectId) as
       | { default_harness_id: string | null }
       | undefined;
@@ -130,10 +208,15 @@ export class Harnesses {
     if (h.type === 'claude-code') {
       // Remote Control on unless switched off: the session is reachable from claude.ai and the phone.
       const name = (this.db.prepare('SELECT name FROM projects WHERE id = ?').get(projectId) as { name: string }).name;
+      let token: string | undefined;
+      if (h.config.mode === 'token') {
+        token = (await keychainGet(h.id)) ?? undefined;
+        if (!token) throw new Error(`${h.name} has no token yet — add one under Harnesses`);
+      }
       return this.claude.start(projectId, undefined, cols, rows, {
         resume,
         remoteName: h.config.remoteControl === 'off' ? undefined : name,
-        account: { harnessId: h.id, configDir: h.config.configDir || undefined },
+        account: { harnessId: h.id, configDir: h.config.configDir || undefined, token },
       });
     }
     if (resume) throw new Error(`${h.name} can't resume conversations`);

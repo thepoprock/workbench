@@ -26,6 +26,11 @@ export interface SpawnSpec {
   env?: Record<string, string>;
   title: string;
   agent?: AgentInfo;
+  // Secrets on screen (e.g. setup-token): keep output in memory only — no
+  // scrollback file, no search index, no error rules.
+  ephemeral?: boolean;
+  // Keep the PTY this wide whatever the pane does, so long lines arrive unwrapped.
+  fixedCols?: number;
 }
 
 interface SessionRow {
@@ -45,6 +50,8 @@ interface SessionRow {
 interface Live {
   info: TermSession;
   killed: boolean; // ended via kill() (a closed tab), not on its own
+  ephemeral: boolean;
+  fixedCols: number | null;
   failed: Set<string>; // side tasks that have failed (logged once)
   proc: pty.IPty | null; // null once exited
   screen: headless.Terminal;
@@ -181,6 +188,7 @@ export class Terminals {
       args: ['-l'],
       title: shell.split('/').pop() ?? 'shell',
     };
+    if (run.fixedCols) cols = run.fixedCols;
     const proc = pty.spawn(run.file, run.args, {
       name: 'xterm-256color',
       cols,
@@ -216,6 +224,8 @@ export class Terminals {
     const s: Live = {
       info,
       killed: false,
+      ephemeral: !!run.ephemeral,
+      fixedCols: run.fixedCols ?? null,
       failed: new Set(),
       proc,
       screen,
@@ -224,7 +234,7 @@ export class Terminals {
       holding: new Map(),
       pending: '',
       flushTimer: null,
-      logFd: openSync(logPath(info.id), 'a', 0o600),
+      logFd: run.ephemeral ? -1 : openSync(logPath(info.id), 'a', 0o600),
       logBytes: 0,
       chunk: { seq: 0, start: 0, tsStart: info.startedAt },
     };
@@ -241,6 +251,10 @@ export class Terminals {
     proc.onData((data) => guard('pty output', () => this.output(s, data)));
     proc.onExit(({ exitCode }) => guard('pty exit', () => this.exited(s, exitCode)));
     return info;
+  }
+
+  isEphemeral(sessionId: string): boolean {
+    return this.live.get(sessionId)?.ephemeral ?? false;
   }
 
   // Claude conversation ids of live agent panes (to mark sessions as ours).
@@ -345,6 +359,7 @@ export class Terminals {
   resize(sessionId: string, cols: number, rows: number): void {
     const s = this.live.get(sessionId);
     if (!s?.proc || cols < 1 || rows < 1) return;
+    if (s.fixedCols) cols = s.fixedCols;
     if (s.screen.cols === cols && s.screen.rows === rows) return;
     s.proc.resize(cols, rows);
     s.screen.resize(cols, rows);
@@ -370,6 +385,7 @@ export class Terminals {
     s.flushTimer ??= setTimeout(() => this.flush(s), FLUSH_MS);
 
     this.safely(s, 'scrollback', () => {
+      if (s.ephemeral) return;
       const bytes = Buffer.from(data);
       writeSync(s.logFd, bytes);
       s.logBytes += bytes.length;
@@ -416,8 +432,10 @@ export class Terminals {
 
   private exited(s: Live, exitCode: number): void {
     this.flush(s);
-    this.safely(s, 'scrollback', () => this.closeChunk(s));
-    this.safely(s, 'scrollback', () => closeSync(s.logFd));
+    if (!s.ephemeral) {
+      this.safely(s, 'scrollback', () => this.closeChunk(s));
+      this.safely(s, 'scrollback', () => closeSync(s.logFd));
+    }
     s.proc = null;
     s.info.status = 'exited';
     s.info.exitCode = exitCode;

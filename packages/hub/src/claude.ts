@@ -51,12 +51,18 @@ const HISTORY_LIMIT = 50;
 export interface ClaudeAccount {
   harnessId: string;
   configDir?: string;
+  token?: string; // token accounts: the secondary's setup-token (from the Keychain)
 }
+
+const TOKEN_RE = /sk-ant-oat\d{2}-[A-Za-z0-9_-]{20,}/;
 
 export const projectsRoot = (configDir?: string) => join(configDir ?? join(homedir(), '.claude'), 'projects');
 export const transcriptDir = (cwd: string, configDir?: string) =>
   join(projectsRoot(configDir), cwd.replace(/[^a-zA-Z0-9]/g, '-'));
-const accountEnv = (configDir?: string): Record<string, string> => (configDir ? { CLAUDE_CONFIG_DIR: configDir } : {});
+const accountEnv = (configDir?: string, token?: string): Record<string, string> => ({
+  ...(configDir ? { CLAUDE_CONFIG_DIR: configDir } : {}),
+  ...(token ? { CLAUDE_CODE_OAUTH_TOKEN: token } : {}),
+});
 
 // Resolve `claude` the way the user's login shell would.
 function findClaude(): string | null {
@@ -121,7 +127,7 @@ export class ClaudeHarness {
           harness: account?.harnessId ?? HARNESS_ID,
           file: shell,
           args: ['-l', '-c', 'exec "$0" "$@"', claudePath, ...claudeArgs],
-          env: { ...hookEnv, ...accountEnv(account?.configDir) },
+          env: { ...hookEnv, ...accountEnv(account?.configDir, account?.token) },
           title: 'Claude',
           agent: { state: 'starting', activity: null, externalId, remoteUrl: null },
         },
@@ -134,13 +140,13 @@ export class ClaudeHarness {
   }
 
   // Signed in? As whom? (`claude auth status` under the account's folder.)
-  async status(configDir?: string): Promise<AccountStatus> {
+  async status(configDir?: string, token?: string): Promise<AccountStatus> {
     // Exits 1 when signed out but still prints the JSON (verified on 2.1.288).
     let stdout: string;
     try {
       ({ stdout } = await run(this.claude(), ['auth', 'status'], {
         timeout: 15_000,
-        env: { ...process.env, ...accountEnv(configDir) },
+        env: { ...process.env, ...accountEnv(configDir, token) },
       }));
     } catch (err) {
       stdout = (err as { stdout?: string }).stdout ?? '';
@@ -161,6 +167,39 @@ export class ClaudeHarness {
       env: accountEnv(account.configDir),
       title: 'Claude sign-in',
     });
+  }
+
+  // A pane running `claude setup-token`, sign in as the secondary account in the
+  // browser; the token it prints is captured into the Keychain. Ephemeral: the
+  // output is never written to disk or indexed. Fixed wide so it isn't wrapped.
+  private tokenWatch = new Map<string, { harnessId: string; buf: string; onToken: (t: string) => void }>();
+  tokenPane(harnessId: string, projectId: string, cols: number, rows: number, onToken: (t: string) => void): TermSession {
+    const shell = process.env.SHELL || '/bin/zsh';
+    const s = this.terms.create(projectId, undefined, cols, rows, {
+      kind: 'terminal',
+      harness: null,
+      file: shell,
+      args: ['-l', '-c', 'exec "$0" "$@"', this.claude(), 'setup-token'],
+      title: 'Claude token setup',
+      ephemeral: true,
+      fixedCols: 400,
+    });
+    this.tokenWatch.set(s.id, { harnessId, buf: '', onToken });
+    return s;
+  }
+
+  watchToken(sessionId: string, data: string): void {
+    const w = this.tokenWatch.get(sessionId);
+    if (!w) return;
+    w.buf = (w.buf + stripAnsi(data)).slice(-2000);
+    const m = TOKEN_RE.exec(w.buf);
+    if (!m) return;
+    this.tokenWatch.delete(sessionId);
+    w.onToken(m[0]);
+  }
+
+  endTokenWatch(sessionId: string): void {
+    this.tokenWatch.delete(sessionId);
   }
 
   // Which account's folder holds this conversation's transcript?

@@ -1,5 +1,11 @@
 import { useCallback, useEffect, useState } from 'react';
-import type { AccountStatus, Harness, HarnessType, ModelServer } from '@workbench/shared';
+import type { AccountMode, AccountStatus, Harness, HarnessType, ModelServer, ShareGroup } from '@workbench/shared';
+
+const SHARE_LABELS: { group: ShareGroup; label: string; hint: string }[] = [
+  { group: 'instructions', label: 'Instructions & settings', hint: 'CLAUDE.md, settings, hooks' },
+  { group: 'extensions', label: 'Agents, commands & skills', hint: 'agents, commands, skills, plugins' },
+  { group: 'history', label: 'History & memory', hint: 'conversations and per-project memory' },
+];
 import { hub } from './hub.ts';
 
 const TYPE_LABEL: Record<HarnessType, string> = {
@@ -27,10 +33,21 @@ const FIELDS: Record<HarnessType, { key: string; label: string; placeholder: str
 type Draft = Omit<Harness, 'id' | 'builtin'> & { id?: string };
 
 // onLogin opens a sign-in pane for a Claude account (needs an open project).
-export function HarnessManager({ onClose, onLogin }: { onClose: () => void; onLogin: (harnessId: string) => void }) {
+// onTokenPane opens a pane that runs `claude setup-token` for a token account.
+export function HarnessManager({
+  onClose,
+  onLogin,
+  onTokenPane,
+}: {
+  onClose: () => void;
+  onLogin: (harnessId: string) => void;
+  onTokenPane: (harnessId: string) => void;
+}) {
   const [harnesses, setHarnesses] = useState<Harness[]>([]);
   const [status, setStatus] = useState<Record<string, AccountStatus | 'error'>>({});
   const [newAccount, setNewAccount] = useState<string | null>(null);
+  const [newMode, setNewMode] = useState<AccountMode>('folder');
+  const [pasting, setPasting] = useState<{ id: string; value: string } | null>(null);
   const [draft, setDraft] = useState<Draft | null>(null);
   const [servers, setServers] = useState<ModelServer[] | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -46,25 +63,38 @@ export function HarnessManager({ onClose, onLogin }: { onClose: () => void; onLo
       );
     }
   }, []);
-  useEffect(() => void load(), [load]);
+  useEffect(() => {
+    void load();
+    return hub.onPush((p) => {
+      if (p.event === 'account.update') void load();
+    });
+  }, [load]);
 
   const addAccount = async () => {
     const name = newAccount?.trim();
     if (!name) return setNewAccount(null);
     let id: string | null = null;
     await run(async () => {
-      id = (await hub.call('account.add', { name })).id;
+      id = (await hub.call('account.add', { name, mode: newMode })).id;
     });
     setNewAccount(null);
-    if (id) onLogin(id);
+    if (id) (newMode === 'token' ? onTokenPane : onLogin)(id);
+  };
+
+  const saveToken = async () => {
+    if (!pasting) return;
+    if (await run(() => hub.call('account.setToken', { harnessId: pasting.id, token: pasting.value }))) setPasting(null);
   };
 
   const accountLine = (h: Harness) => {
     const st = status[h.id];
     if (!st) return 'checking…';
     if (st === 'error') return 'status unavailable';
+    if (h.config.mode === 'token') return st.tokenHint ? `token …${st.tokenHint} saved · shares your main folder` : 'no token yet';
     return st.loggedIn ? `signed in as ${st.email ?? 'unknown'}` : 'not signed in';
   };
+  const kindLabel = (h: Harness) =>
+    h.config.mode === 'token' ? 'Token account' : h.config.configDir ? 'Separate-folder account' : 'Main Claude account';
 
   const run = async (fn: () => Promise<unknown>) => {
     try {
@@ -111,14 +141,60 @@ export function HarnessManager({ onClose, onLogin }: { onClose: () => void; onLo
               <div className="hm-text">
                 <span className="hm-name">{h.name}</span>
                 <span className="muted small">
-                  {h.type === 'claude-code' ? `${h.config.configDir ? 'Claude account' : 'Main Claude account'} · ${accountLine(h)}` : TYPE_LABEL[h.type]}
+                  {h.type === 'claude-code' ? `${kindLabel(h)} · ${accountLine(h)}` : TYPE_LABEL[h.type]}
                   {h.config.model ? ` · ${h.config.model}` : ''}
                   {h.config.baseUrl ? ` · ${h.config.baseUrl}` : ''}
                   {h.config.command ? ` · ${h.config.command}` : ''}
                   {h.config.script ? ` · ${h.config.script}` : ''}
                 </span>
+                {h.sharing && (
+                  <span className="hm-share">
+                    Share with main:
+                    {SHARE_LABELS.map((x) => (
+                      <label key={x.group} title={x.hint}>
+                        <input
+                          type="checkbox"
+                          checked={h.sharing![x.group]}
+                          onChange={(e) =>
+                            void run(() => hub.call('account.share', { harnessId: h.id, group: x.group, shared: e.target.checked }))
+                          }
+                        />
+                        {x.label}
+                      </label>
+                    ))}
+                  </span>
+                )}
+                {pasting?.id === h.id && (
+                  <span className="hm-row hm-paste">
+                    <input
+                      autoFocus
+                      type="password"
+                      className="mono"
+                      placeholder="sk-ant-oat…"
+                      value={pasting.value}
+                      onChange={(e) => setPasting({ id: h.id, value: e.target.value })}
+                      onKeyDown={(e) => {
+                        if (e.key === 'Enter') void saveToken();
+                        if (e.key === 'Escape') setPasting(null);
+                      }}
+                    />
+                    <button className="action primary" onClick={() => void saveToken()}>
+                      Save to Keychain
+                    </button>
+                  </span>
+                )}
               </div>
-              {h.type === 'claude-code' && status[h.id] && status[h.id] !== 'error' && !(status[h.id] as AccountStatus).loggedIn && (
+              {h.config.mode === 'token' && (
+                <>
+                  <button className="link" onClick={() => onTokenPane(h.id)} title="Run claude setup-token and capture the token">
+                    Get token
+                  </button>
+                  <button className="link" onClick={() => setPasting({ id: h.id, value: '' })}>
+                    Paste token
+                  </button>
+                </>
+              )}
+              {h.type === 'claude-code' && h.config.mode !== 'token' && status[h.id] && status[h.id] !== 'error' && !(status[h.id] as AccountStatus).loggedIn && (
                 <button className="link" onClick={() => onLogin(h.id)}>
                   Sign in
                 </button>
@@ -197,6 +273,10 @@ export function HarnessManager({ onClose, onLogin }: { onClose: () => void; onLo
           <div className="hm-form">
             <div className="hm-row">
               <span className="hm-label">Account</span>
+              <select value={newMode} onChange={(e) => setNewMode(e.target.value as AccountMode)}>
+                <option value="folder">Separate folder (own sign-in)</option>
+                <option value="token">Main folder + token (shares everything)</option>
+              </select>
               <input
                 autoFocus
                 placeholder="A name for it, e.g. Work"
@@ -208,11 +288,13 @@ export function HarnessManager({ onClose, onLogin }: { onClose: () => void; onLo
                 }}
               />
               <button className="action primary" onClick={() => void addAccount()}>
-                Add &amp; sign in
+                {newMode === 'token' ? 'Add & get token' : 'Add & sign in'}
               </button>
             </div>
             <p className="muted small">
-              It gets its own Claude folder — sign-in, settings, memory, history and folder trust are separate from your main account.
+              {newMode === 'token'
+                ? "Runs in your main Claude folder with this account's setup-token: same history, memory and settings, but the work is done (and counted) on this account. Your main login is untouched; the token is kept in the macOS Keychain."
+                : 'Gets its own Claude folder and sign-in. Nothing is shared unless you switch it on below (instructions & settings, agents & skills, history & memory).'}
             </p>
           </div>
         )}

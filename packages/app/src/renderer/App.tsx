@@ -395,6 +395,17 @@ export function App() {
       {managingHarnesses && (
         <HarnessManager
           onClose={() => setManagingHarnesses(false)}
+          onTokenPane={(harnessId) => {
+            if (!current || !dock) return setError('Open a project first — the token setup runs in one of its panes.');
+            void hub.call('account.tokenPane', { harnessId, projectId: current.id, cols: 100, rows: 30 }).then(
+              (s) => {
+                putSessions([s]);
+                openTerminal(dock, s.id, s.title);
+                setManagingHarnesses(false);
+              },
+              (err) => setError((err as Error).message),
+            );
+          }}
           onLogin={(harnessId) => {
             if (!current || !dock) return setError('Open a project first — the sign-in runs in one of its panes.');
             void hub.call('account.login', { harnessId, projectId: current.id, cols: 100, rows: 30 }).then(
