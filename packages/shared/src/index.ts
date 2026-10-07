@@ -258,6 +258,9 @@ export interface Methods {
   'local.stop': { params: { id: string }; result: null };
   // Claude accounts: each is a Claude Code harness with its own config folder and login.
   'account.add': { params: { name: string; mode: AccountMode }; result: Harness };
+  // The account new Claude sessions use (and bill to): the main login or a token account.
+  'account.usage': { params: Empty; result: { harnessId: string } };
+  'account.setUsage': { params: { harnessId: string }; result: { harnessId: string } };
   'account.share': { params: { harnessId: string; group: ShareGroup; shared: boolean }; result: Harness };
   // Token accounts: save a setup-token (Keychain), or open a pane that runs
   // `claude setup-token` and captures the token itself (nothing written to disk).

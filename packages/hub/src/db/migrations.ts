@@ -187,4 +187,7 @@ export const migrations: string[] = [
 
   // 8 — harnesses are soft-deleted (past sessions keep referencing them)
   `ALTER TABLE harnesses ADD COLUMN deleted INTEGER NOT NULL DEFAULT 0;`,
+
+  // 9 — app-wide settings (e.g. which Claude account new sessions bill to)
+  `CREATE TABLE settings (key TEXT PRIMARY KEY, value TEXT NOT NULL);`,
 ];

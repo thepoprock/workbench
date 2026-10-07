@@ -67,7 +67,13 @@ async function main(): Promise<void> {
   const history = new History(db, () =>
     harnessesRef ? harnessesRef.accounts().map((a) => projectsRoot(a.configDir)) : [projectsRoot()],
   );
-  const ideas = new Ideas(db, terms, claude, (idea) => server?.broadcast({ event: 'idea.update', data: idea }));
+  const ideas = new Ideas(
+    db,
+    terms,
+    claude,
+    (idea) => server?.broadcast({ event: 'idea.update', data: idea }),
+    () => harnessesRef!.usageClaudeAccount(),
+  );
   const changelog = new Changelog(db, (projectId) =>
     server?.broadcast({ event: 'changelog.update', data: { projectId } }),
   );

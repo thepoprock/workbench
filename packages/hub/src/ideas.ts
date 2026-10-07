@@ -2,7 +2,7 @@ import { randomUUID } from 'node:crypto';
 import { copyFileSync, existsSync, mkdirSync, readdirSync, readFileSync, statSync, watch, writeFileSync, type FSWatcher } from 'node:fs';
 import { basename, join } from 'node:path';
 import type { Idea, IdeaStage, Project, TermSession } from '@workbench/shared';
-import type { ClaudeHarness } from './claude.ts';
+import type { ClaudeAccount, ClaudeHarness } from './claude.ts';
 import type { DB } from './db/index.ts';
 import { dataDir } from './paths.ts';
 import type { Terminals } from './terminals.ts';
@@ -64,6 +64,7 @@ export class Ideas {
     private terms: Terminals,
     private claude: ClaudeHarness,
     private push: (idea: Idea) => void,
+    private usageAccount: () => Promise<ClaudeAccount>,
   ) {
     mkdirSync(ideasDir, { recursive: true, mode: 0o700 });
     for (const r of this.rows(false)) this.watch(r);
@@ -123,7 +124,7 @@ export class Ideas {
     writeFileSync(this.filePath(id, file), content);
   }
 
-  agent(id: string, cols: number, rows: number): TermSession {
+  async agent(id: string, cols: number, rows: number): Promise<TermSession> {
     const r = this.row(id);
     const prev = r.session_id ? this.safeInfo(r.session_id) : null;
     if (prev?.status === 'running') return prev;
@@ -133,6 +134,7 @@ export class Ideas {
       resume,
       prompt: resume ? undefined : BRIEF,
       remoteName: `Idea: ${r.title}`,
+      account: await this.usageAccount(),
     });
     this.db.prepare('UPDATE ideas SET session_id = ?, updated_at = ? WHERE id = ?').run(s.id, Date.now(), id);
     this.push(this.toIdea(this.row(id)));

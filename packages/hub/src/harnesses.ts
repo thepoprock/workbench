@@ -84,6 +84,38 @@ export class Harnesses {
     seed('local-ollama', 'local-model', 'Local model (Ollama)', { baseUrl: 'http://localhost:11434/v1', model: 'llama3.1' }, 0);
   }
 
+  // The account new Claude sessions use: the main login or a token account
+  // (both work in the main ~/.claude, so history stays in one place).
+  usageAccount(): string {
+    const row = this.db.prepare("SELECT value FROM settings WHERE key = 'usageAccount'").get() as { value: string } | undefined;
+    if (!row) return HARNESS_ID;
+    try {
+      const h = this.get(row.value);
+      return h.type === 'claude-code' && !h.config.configDir ? h.id : HARNESS_ID;
+    } catch {
+      return HARNESS_ID; // deleted since
+    }
+  }
+
+  setUsageAccount(harnessId: string): string {
+    const h = this.get(harnessId);
+    if (h.type !== 'claude-code') throw new Error(`${h.name} is not a Claude account`);
+    if (h.config.configDir) throw new Error(`${h.name} has its own folder — it is used for its own conversations, not as the main account`);
+    this.db
+      .prepare("INSERT INTO settings (key, value) VALUES ('usageAccount', ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value")
+      .run(h.id);
+    return h.id;
+  }
+
+  // Claude settings for a session in the main folder, on the usage account.
+  async usageClaudeAccount(): Promise<ClaudeAccount> {
+    const id = this.usageAccount();
+    if (id === HARNESS_ID) return { harnessId: id };
+    const token = await keychainGet(id);
+    if (!token) throw new Error(`${this.get(id).name} is selected for usage but has no token — add one under Harnesses`);
+    return { harnessId: id, token };
+  }
+
   // Every Claude account: the main login plus each extra config folder.
   accounts(): ClaudeAccount[] {
     return this.list()
@@ -203,8 +235,10 @@ export class Harnesses {
       | { default_harness_id: string | null }
       | undefined;
     if (!project) throw new Error('unknown project');
-    const h = this.get(harnessId ?? project.default_harness_id ?? HARNESS_ID);
+    let h = this.get(harnessId ?? project.default_harness_id ?? HARNESS_ID);
     if (!h.enabled) throw new Error(`${h.name} is turned off — enable it under Harnesses`);
+    // "Claude Code" means: whichever account is selected for usage.
+    if (h.id === HARNESS_ID) h = this.get(this.usageAccount());
     if (h.type === 'claude-code') {
       // Remote Control on unless switched off: the session is reachable from claude.ai and the phone.
       const name = (this.db.prepare('SELECT name FROM projects WHERE id = ?').get(projectId) as { name: string }).name;

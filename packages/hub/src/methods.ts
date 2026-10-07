@@ -79,13 +79,23 @@ export function makeDispatch(
 
   // The account a Claude conversation belongs to: the session that last ran it,
   // else whichever account's folder holds its transcript.
+  // Conversations in the main folder resume on the usage account (undefined);
+  // those in a separate-folder account can only resume there.
   const resumeAccount = (projectId: string, externalId: string): string | undefined => {
+    const folderAccount = (id: string | undefined) => {
+      if (!id) return undefined;
+      try {
+        return harnesses.account(id).configDir ? id : undefined;
+      } catch {
+        return undefined;
+      }
+    };
     const ran = db
       .prepare('SELECT harness_id FROM sessions WHERE external_id = ? AND harness_id IS NOT NULL ORDER BY started_at DESC LIMIT 1')
       .get(externalId) as { harness_id: string } | undefined;
-    if (ran) return ran.harness_id;
+    if (ran) return folderAccount(ran.harness_id);
     const root = getProject(projectId).root_path;
-    return root ? claude.accountOf(externalId, root, harnesses.accounts())?.harnessId : undefined;
+    return root ? folderAccount(claude.accountOf(externalId, root, harnesses.accounts())?.harnessId) : undefined;
   };
 
   const handlers: Handlers = {
@@ -160,6 +170,15 @@ export function makeDispatch(
       return harnesses.start(projectId, harnessId, cols, rows, resume);
     },
     'account.add': ({ name, mode }) => harnesses.addAccount(name, mode),
+    'account.usage': () => ({ harnessId: harnesses.usageAccount() }),
+    'account.setUsage': async ({ harnessId }) => {
+      if (harnesses.account(harnessId).tokenMode && !(await keychainGet(harnessId))) {
+        throw new Error('that account has no token yet — Get token or Paste token under Harnesses first');
+      }
+      const id = harnesses.setUsageAccount(harnessId);
+      onAccountUpdate(id);
+      return { harnessId: id };
+    },
     'account.share': ({ harnessId, group, shared }) => harnesses.share(harnessId, group, shared),
     'account.status': async ({ harnessId }) => {
       const a = harnesses.account(harnessId);

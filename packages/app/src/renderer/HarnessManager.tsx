@@ -293,7 +293,7 @@ export function HarnessManager({
             </div>
             <p className="muted small">
               {newMode === 'token'
-                ? "Runs in your main Claude folder with this account's setup-token: same history, memory and settings, but the work is done (and counted) on this account. Your main login is untouched; the token is kept in the macOS Keychain."
+                ? "Uses your main Claude folder (same history, memory and settings) with this account's setup-token. Pick it with Credits in the title bar and new sessions run, and count, on it. Your main login is untouched; the token is kept in the macOS Keychain."
                 : 'Gets its own Claude folder and sign-in. Nothing is shared unless you switch it on below (instructions & settings, agents & skills, history & memory).'}
             </p>
           </div>

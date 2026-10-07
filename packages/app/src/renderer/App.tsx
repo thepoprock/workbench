@@ -4,6 +4,7 @@ import type { HubInfo, Idea, Project, SearchHit, TermSession } from '@workbench/
 import { IdeasList } from './IdeasList.tsx';
 import { IdeaView } from './IdeaView.tsx';
 import { loadIdeas, useIdeas } from './ideas.ts';
+import { accountLabel, loadAccounts, useAccounts } from './accounts.ts';
 import { Agents } from './Agents.tsx';
 import { HarnessManager } from './HarnessManager.tsx';
 import { putSessions, statusClass, useProjectSessions } from './sessions.ts';
@@ -84,6 +85,21 @@ export function App() {
   );
 
   const currentIdea = ideas.find((i) => i.id === ideaSel) ?? null;
+  const accounts = useAccounts();
+  const usageHarness = accounts.harnesses.find((h) => h.id === accounts.usage);
+  // Accounts that can bill new sessions: the main login and token accounts.
+  const billable = accounts.harnesses.filter((h) => h.type === 'claude-code' && !h.config.configDir);
+
+  const pickUsage = async () => {
+    if (billable.length < 2) return setManagingHarnesses(true);
+    const choice = await window.workbench.menu([
+      ...billable.map((h) => ({ id: h.id, label: `${h.id === accounts.usage ? '✓ ' : '   '}${accountLabel(h)}${h.id === 'claude-code' ? ' (your login)' : ''}` })),
+      { type: 'separator' as const },
+      { id: '__manage', label: 'Manage accounts…' },
+    ]);
+    if (choice === '__manage') return setManagingHarnesses(true);
+    if (choice) await hub.call('account.setUsage', { harnessId: choice }).catch((err) => setError((err as Error).message));
+  };
   // While an idea is open, project-specific UI is hidden (but the selection is kept).
   const current = currentIdea ? null : (projects.find((p) => p.id === selected && !p.archived) ?? null);
 
@@ -92,6 +108,7 @@ export function App() {
       setInfo(await hub.call('hub.info', {}));
       setProjects(await hub.call('project.list', { includeArchived: true }));
       await loadIdeas();
+      await loadAccounts();
     } catch (err) {
       setError((err as Error).message);
     }
@@ -377,6 +394,14 @@ export function App() {
               Changelog <kbd>⌘⇧L</kbd>
             </button>
           )}
+          <button
+            className="search-button"
+            onClick={() => void pickUsage()}
+            disabled={status !== 'connected'}
+            title="Which Claude account new sessions use (and bill to). Running sessions keep theirs."
+          >
+            Credits: {accountLabel(usageHarness)} ▾
+          </button>
           <button className="search-button" onClick={() => setSearching(true)} disabled={status !== 'connected'}>
             Search history <kbd>⌘⇧F</kbd>
           </button>

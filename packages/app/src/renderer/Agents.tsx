@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import type { ClaudeTranscript, Project, TermSession } from '@workbench/shared';
 import { hub } from './hub.ts';
 import { statusClass } from './sessions.ts';
+import { accountLabel, useAccounts } from './accounts.ts';
 
 const ago = (t: number) => {
   const s = (Date.now() - t) / 1000;
@@ -29,6 +30,9 @@ interface Props {
 
 export function Agents({ onRemote, project, sessions, canOpen, onOpen, onStart }: Props) {
   const [showHistory, setShowHistory] = useState(false);
+  const accounts = useAccounts();
+  const multiAccount = accounts.harnesses.filter((h) => h.type === 'claude-code').length > 1;
+  const accountOf = (harnessId: string | null) => accounts.harnesses.find((h) => h.id === harnessId);
   const [history, setHistory] = useState<ClaudeTranscript[] | null>(null);
   const [accountNames, setAccountNames] = useState<Record<string, string>>({});
   const endedCount = sessions.filter((s) => s.status !== 'running').length;
@@ -54,12 +58,16 @@ export function Agents({ onRemote, project, sessions, canOpen, onOpen, onStart }
 
   // One enabled harness: start it. Several: let the user pick (default first).
   const pickHarness = async () => {
-    const enabled = (await hub.call('harness.list', {})).filter((h) => h.enabled);
+    // Token accounts aren't listed: the Credits switch decides which account "Claude Code" uses.
+    const enabled = (await hub.call('harness.list', {})).filter((h) => h.enabled && h.config.mode !== 'token');
     if (enabled.length <= 1) return onStart(undefined, enabled[0]?.id);
     const def = project.defaultHarnessId ?? 'claude-code';
     enabled.sort((a, b) => Number(b.id === def) - Number(a.id === def));
     const choice = await window.workbench.menu(
-      enabled.map((h) => ({ id: h.id, label: `${h.name}${h.id === def ? '  (default)' : ''}` })),
+      enabled.map((h) => ({
+        id: h.id,
+        label: `${h.name}${h.id === 'claude-code' ? ` (credits: ${accountLabel(accounts.harnesses.find((x) => x.id === accounts.usage))})` : ''}${h.id === def ? '  (default)' : ''}`,
+      })),
     );
     if (choice) onStart(undefined, choice);
   };
@@ -105,6 +113,7 @@ export function Agents({ onRemote, project, sessions, canOpen, onOpen, onStart }
                   {s.status === 'running' && s.agent?.remoteUrl && <span className="rc-chip">RC</span>}
                 </span>
                 <span className="agent-activity">
+                  {multiAccount && s.harness && accountOf(s.harness)?.type === 'claude-code' ? `${accountLabel(accountOf(s.harness))} · ` : ''}
                   {s.status === 'running'
                     ? (s.agent?.activity ?? STATE_LABEL[s.agent?.state ?? 'idle'])
                     : s.status === 'lost'
