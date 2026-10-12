@@ -141,7 +141,11 @@ export function HarnessManager({
               <div className="hm-text">
                 <span className="hm-name">{h.name}</span>
                 <span className="muted small">
-                  {h.type === 'claude-code' ? `${kindLabel(h)} · ${accountLine(h)}` : TYPE_LABEL[h.type]}
+                  {h.type === 'claude-code'
+                    ? `${kindLabel(h)} · ${accountLine(h)}`
+                    : h.id === 'openai-codex'
+                      ? `${TYPE_LABEL[h.type]} · uses the Codex CLI login and model picker`
+                      : TYPE_LABEL[h.type]}
                   {h.config.model ? ` · ${h.config.model}` : ''}
                   {h.config.baseUrl ? ` · ${h.config.baseUrl}` : ''}
                   {h.config.command ? ` · ${h.config.command}` : ''}

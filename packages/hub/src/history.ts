@@ -7,6 +7,7 @@ import type { DB } from './db/index.ts';
 const REFRESH_MIN_MS = 15_000; // a search re-scans transcripts at most this often
 const READ_SLICE = 16 * 1024 * 1024; // bytes read per step when catching up on a file
 const PER_SOURCE = 300; // FTS rows fetched per source before de-duplicating
+const CODEX_ROOT = join(homedir(), '.codex', 'sessions');
 
 // Search syntax is plain words: each becomes a quoted prefix term, all must match.
 // (Raw FTS5 syntax from a search box would throw on stray quotes or operators.)
@@ -61,6 +62,96 @@ export class History {
   private async scan(): Promise<void> {
     for (const root of this.roots()) {
       if (existsSync(root)) await this.scanRoot(root);
+    }
+    if (existsSync(CODEX_ROOT)) await this.scanCodexRoot(CODEX_ROOT);
+  }
+
+  private async scanCodexRoot(root: string): Promise<void> {
+    let names: string[];
+    try {
+      names = readdirSync(root);
+    } catch {
+      return;
+    }
+    for (const name of names) {
+      const full = join(root, name);
+      try {
+        if (statSync(full).isDirectory()) await this.scanCodexRoot(full);
+        else if (name.endsWith('.jsonl')) this.indexCodexFile(full);
+      } catch {
+        // Skip files that are being rotated or removed by Codex.
+      }
+      await new Promise((r) => setImmediate(r));
+    }
+  }
+
+  private indexCodexFile(path: string): void {
+    const size = statSync(path).size;
+    let row = this.db.prepare('SELECT * FROM transcript_files WHERE path = ?').get(path) as FileRow | undefined;
+    let id = row?.transcript_id ?? basename(path, '.jsonl').replace(/^rollout-/, '');
+    if (row && size < row.offset) {
+      this.db.prepare('DELETE FROM transcript_fts WHERE transcript_id = ?').run(id);
+      this.db.prepare('DELETE FROM transcript_files WHERE path = ?').run(path);
+      row = undefined;
+      id = basename(path, '.jsonl').replace(/^rollout-/, '');
+    }
+    let offset = row?.offset ?? 0;
+    if (offset >= size) return;
+    let cwd = row?.cwd ?? null;
+    let title = row?.title ?? null;
+    const insert = this.db.prepare('INSERT INTO transcript_fts (text, transcript_id, role, ts) VALUES (?, ?, ?, ?)');
+    const fd = openSync(path, 'r');
+    try {
+      while (offset < size) {
+        const len = Math.min(READ_SLICE, size - offset);
+        const buf = Buffer.alloc(len);
+        readSync(fd, buf, 0, len, offset);
+        const end = buf.lastIndexOf(0x0a);
+        if (end < 0) break;
+        const lines = buf.subarray(0, end).toString('utf8').split('\n');
+        this.db.exec('BEGIN');
+        try {
+          for (const line of lines) {
+            let d: Record<string, unknown>;
+            try {
+              d = JSON.parse(line);
+            } catch {
+              continue;
+            }
+            const payload = d.payload && typeof d.payload === 'object' ? (d.payload as Record<string, unknown>) : {};
+            if (d.type === 'session_meta') {
+              if (typeof payload.session_id === 'string') id = payload.session_id;
+              if (typeof payload.cwd === 'string') cwd = payload.cwd;
+              continue;
+            }
+            if (d.type !== 'response_item' || payload.type !== 'message' || !['user', 'assistant'].includes(String(payload.role))) continue;
+            const content = Array.isArray(payload.content)
+              ? payload.content
+                  .filter((b) => b && typeof b === 'object' && ['input_text', 'output_text'].includes(String((b as Record<string, unknown>).type)))
+                  .map((b) => String((b as Record<string, unknown>).text ?? ''))
+                  .join('\n')
+                  .trim()
+              : '';
+            if (!content) continue;
+            if (payload.role === 'user' && !title) title = content.replace(/\s+/g, ' ').slice(0, 100);
+            const ts = typeof d.timestamp === 'string' ? Date.parse(d.timestamp) || null : null;
+            insert.run(content, id, String(payload.role), ts);
+          }
+          offset += end + 1;
+          this.db
+            .prepare(
+              `INSERT INTO transcript_files (path, transcript_id, cwd, title, offset, updated_at) VALUES (?, ?, ?, ?, ?, ?)
+               ON CONFLICT(path) DO UPDATE SET transcript_id = excluded.transcript_id, cwd = excluded.cwd, title = excluded.title, offset = excluded.offset, updated_at = excluded.updated_at`,
+            )
+            .run(path, id, cwd, title, offset, Date.now());
+          this.db.exec('COMMIT');
+        } catch (err) {
+          this.db.exec('ROLLBACK');
+          throw err;
+        }
+      }
+    } finally {
+      closeSync(fd);
     }
   }
 

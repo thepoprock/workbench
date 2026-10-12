@@ -84,6 +84,7 @@ export interface Pushes {
   'term.data': { sessionId: string; data: string }; // only to attached clients
   'term.update': TermSession; // to everyone: status/title changes
   'idea.update': Idea; // metadata or a file in its folder changed
+  'project.update': Project; // created, renamed, moved or archived, possibly by another client
   'changelog.update': { projectId: string }; // entries added or changed
   'account.update': { harnessId: string }; // sign-in or token changed
   // A session hit its account's usage limit. movedTo: auto-switch moved it there.
@@ -95,7 +96,9 @@ export interface Pushes {
 // A past Claude Code conversation, read from ~/.claude/projects/<cwd>/<id>.jsonl.
 export interface ClaudeTranscript {
   id: string;
-  harnessId: string; // the Claude account (harness) whose folder holds it
+  harnessId: string; // the harness/account that owns the conversation
+  provider?: 'claude-code' | 'openai-codex';
+  cwd?: string;
   movedHere?: boolean; // shown here by Organize / Move to project, started elsewhere
   title: string;
   firstPrompt: string | null;

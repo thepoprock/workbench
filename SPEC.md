@@ -124,6 +124,9 @@ interface Harness {
   LM Studio, llama.cpp server). Model picker per session; runs the same agent
   loop/tools as our custom harnesses, so a local model can be swapped in
   wherever a hosted one is used. Hub detects running servers on localhost.
+- **OpenAI Codex CLI:** launch the installed `codex` CLI, using its existing
+  ChatGPT sign-in and model picker. Import and resume local Codex session files
+  from `~/.codex/sessions/**/*.jsonl`; this does not import chatgpt.com history.
 - Harnesses are toggled on/off globally and per project.
 
 ## 6. Errors

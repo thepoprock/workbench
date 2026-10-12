@@ -118,6 +118,7 @@ async function main(): Promise<void> {
   const dispatch = makeDispatch(
     db, terms, claude, history, ideas, changelog, errors, harnesses,
     (harnessId) => server?.broadcast({ event: 'account.update', data: { harnessId } }),
+    (project) => server?.broadcast({ event: 'project.update', data: project }),
     {
     version: VERSION,
     pid: process.pid,

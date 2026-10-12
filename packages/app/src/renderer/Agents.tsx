@@ -146,21 +146,22 @@ export function Agents({ projects, onClaudeFiles, onRemote, onMove, project, ses
         ▸ Claude files
       </button>
       <button className="disclosure" onClick={() => setShowHistory((v) => !v)}>
-        {showHistory ? '▾' : '▸'} Claude history
+        {showHistory ? '▾' : '▸'} Conversation history
       </button>
       {showHistory && (
         <ul className="list history">
-          {!project.rootPath && <li className="empty">Set a project folder to see its Claude history.</li>}
+          {!project.rootPath && <li className="empty">Set a project folder to see its conversation history.</li>}
           {project.rootPath && history === null && <li className="empty">Loading…</li>}
           {project.rootPath && history?.length === 0 && <li className="empty">No past sessions in this folder.</li>}
           {history?.map((h) => (
             <li key={h.id}>
               <button
-                onClick={() => onStart(h.id)}
+                onClick={() => onStart(h.id, h.harnessId)}
                 disabled={!canOpen}
                 title={h.firstPrompt ?? h.title}
                 onContextMenu={(e) => {
                   e.preventDefault();
+                  if (h.provider === 'openai-codex') return;
                   void window.workbench
                     .menu([
                       ...projects
@@ -182,7 +183,7 @@ export function Agents({ projects, onClaudeFiles, onRemote, onMove, project, ses
                   </span>
                   <span className="agent-activity">
                     {ago(h.updatedAt)}
-                    {accountNames[h.harnessId] ? ` · ${accountNames[h.harnessId]}` : ''} · resume
+                    {h.provider === 'openai-codex' ? ' · OpenAI Codex' : accountNames[h.harnessId] ? ` · ${accountNames[h.harnessId]}` : ''} · resume
                   </span>
                 </span>
               </button>

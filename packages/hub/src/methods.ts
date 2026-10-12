@@ -17,6 +17,7 @@ import type { Changelog } from './changelog.ts';
 import type { Errors } from './errors.ts';
 import type { Harnesses } from './harnesses.ts';
 import type { Terminals } from './terminals.ts';
+import { codexHistory } from './codexhistory.ts';
 
 type Handler<M extends Method> = (params: Methods[M]['params'], client: Client) => unknown;
 type Handlers = { [M in Method]: Handler<M> };
@@ -59,6 +60,7 @@ export function makeDispatch(
   errors: Errors,
   harnesses: Harnesses,
   onAccountUpdate: (harnessId: string) => void,
+  onProjectUpdate: (project: Project) => void,
   info: Omit<HubInfo, 'schemaVersion' | 'protocol'>,
   // Out: the hub wires limit detection to these.
   exportsOut: HubOps = {},
@@ -117,7 +119,9 @@ export function makeDispatch(
       row.root_path,
       row.created_at,
     );
-    return toProject(row);
+    const project = toProject(row);
+    onProjectUpdate(project);
+    return project;
   };
 
   // The account a Claude conversation belongs to: the session that last ran it,
@@ -189,7 +193,9 @@ export function makeDispatch(
         row.default_harness_id,
         id,
       );
-      return toProject(row);
+      const project = toProject(row);
+      onProjectUpdate(project);
+      return project;
     },
 
     'project.archive': ({ id, archived }) => {
@@ -199,7 +205,9 @@ export function makeDispatch(
       }
       row.archived = archived ? 1 : 0;
       db.prepare('UPDATE projects SET archived = ? WHERE id = ?').run(row.archived, id);
-      return toProject(row);
+      const project = toProject(row);
+      onProjectUpdate(project);
+      return project;
     },
 
     'term.create': ({ projectId, cwd, cols, rows }) => terms.create(projectId, cwd, cols, rows),
@@ -220,6 +228,13 @@ export function makeDispatch(
           .list(projectId)
           .find((s) => s.status === 'running' && s.agent?.externalId === resume);
         if (open) return open; // already running here: the UI focuses it
+        if (harnessId === 'openai-codex') {
+          const project = getProject(projectId);
+          const codexPane = terms
+            .list(projectId)
+            .find((s) => s.status === 'running' && s.harness === 'openai-codex' && s.cwd === project.root_path);
+          if (codexPane) return codexPane;
+        }
         // A conversation resumes on the account it lives in, in the folder it
         // was started in (where Claude keeps it) even if it's filed elsewhere.
         harnessId ??= resumeAccount(projectId, resume);
@@ -283,7 +298,7 @@ export function makeDispatch(
       }
       return { mode: failoverMode() };
     },
-    'agent.history': ({ projectId }) => {
+    'agent.history': async ({ projectId }) => {
       const root = getProject(projectId).root_path;
       const filed = db.prepare('SELECT transcript_id, project_id FROM conversation_projects').all() as {
         transcript_id: string;
@@ -294,8 +309,11 @@ export function makeDispatch(
         .map((f) => transcriptFile(f.transcript_id))
         .filter((x): x is { path: string; harnessId: string } => !!x);
       const elsewhere = new Set(filed.filter((f) => f.project_id !== projectId).map((f) => f.transcript_id));
-      if (!root) return claude.readTranscripts(here).then((ts) => ts.map((t) => ({ ...t, movedHere: true })));
-      return claude.history(root, harnesses.accounts(), { elsewhere, here });
+      const claudeItems = !root
+        ? await claude.readTranscripts(here).then((ts) => ts.map((t) => ({ ...t, movedHere: true })))
+        : await claude.history(root, harnesses.accounts(), { elsewhere, here });
+      const codexItems = await codexHistory(root);
+      return [...claudeItems, ...codexItems].sort((a, b) => b.updatedAt - a.updatedAt).slice(0, 100);
     },
     'claude.organize': () =>
       organizer.suggest(

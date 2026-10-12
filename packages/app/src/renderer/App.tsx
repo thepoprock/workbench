@@ -126,6 +126,16 @@ export function App() {
     if (status === 'connected') void refresh();
   }, [status, refresh]);
 
+  // A project created or changed by another client (a second window, a script, an idea
+  // promoted outside this window) arrives as a push: reload the list.
+  useEffect(
+    () =>
+      hub.onPush((p) => {
+        if (p.event === 'project.update') void refresh();
+      }),
+    [refresh],
+  );
+
   // Sessions for the selected project; the store follows term.update pushes.
   const sessions = useProjectSessions(current?.id ?? null);
   useEffect(() => {

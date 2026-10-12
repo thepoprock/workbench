@@ -43,8 +43,10 @@ live in `~/Library/Application Support/Workbench/`.
 - Harnesses (**Harnesses…** in the sidebar): Claude Code (always on), the
   Agent SDK starter (`packages/runner/sdk-agent.mjs` — copy it to build your
   own), local models over any OpenAI-compatible server (Ollama, LM Studio,
-  llama.cpp/MLX; "Find local model servers" detects them) and custom
-  commands. **Agents +** offers every enabled harness; a project's right-click
+  llama.cpp/MLX; "Find local model servers" detects them), OpenAI Codex CLI,
+  and custom commands. OpenAI Codex uses the existing `codex` CLI ChatGPT sign-in;
+  choose available GPT models in the Codex pane. It does not need an API key.
+  **Agents +** offers every enabled harness; a project's right-click
   menu sets its default (what ⌘⇧A starts). Any program can be a harness by
   POSTing the events documented in `packages/runner/events.mjs`.
 - Claude accounts (**Harnesses… → Add Claude account**), two kinds:
@@ -73,6 +75,9 @@ live in `~/Library/Application Support/Workbench/`.
   or folder whose files it touched most) for you to review and file; right-click a
   conversation → **Move to project** to fix one by hand (manual moves are never overridden).
   Filed conversations still resume in the folder they were started in.
+  OpenAI Codex sessions are loaded from `~/.codex/sessions` into the shared
+  **Conversation history** view and search, and can be resumed with Codex CLI.
+  ChatGPT conversations on chatgpt.com are separate and aren't exposed by CLI sign-in.
   **Claude files** (Agents section) browses and edits global CLAUDE.md, settings, agents,
   skills and the project's CLAUDE.md and memory — nothing else is reachable
   (`~/.claude.json` never), and JSON is validated before saving.

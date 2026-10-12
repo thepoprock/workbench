@@ -42,6 +42,7 @@ function sharingOf(configDir: string): Record<ShareGroup, boolean> {
   return out;
 }
 const TYPES: HarnessType[] = ['claude-code', 'agent-sdk', 'local-model', 'custom'];
+const OPENAI_HARNESS_ID = 'openai-codex';
 
 const KNOWN_SERVERS = [
   { name: 'Ollama', baseUrl: 'http://localhost:11434/v1' },
@@ -63,8 +64,8 @@ const toHarness = (r: Row): Harness => {
     id: r.id,
     type: r.type,
     name: r.name,
-    enabled: r.id === HARNESS_ID ? true : r.enabled === 1,
-    builtin: r.id === HARNESS_ID,
+    enabled: r.id === HARNESS_ID || r.id === OPENAI_HARNESS_ID ? true : r.enabled === 1,
+    builtin: r.id === HARNESS_ID || r.id === OPENAI_HARNESS_ID,
     config,
     ...(r.type === 'claude-code' && config.configDir ? { sharing: sharingOf(config.configDir) } : {}),
   };
@@ -82,6 +83,7 @@ export class Harnesses {
         .run(id, type, name, JSON.stringify(config), enabled, Date.now());
     seed('sdk-starter', 'agent-sdk', 'Agent SDK starter', {}, 0);
     seed('local-ollama', 'local-model', 'Local model (Ollama)', { baseUrl: 'http://localhost:11434/v1', model: 'llama3.1' }, 0);
+    seed(OPENAI_HARNESS_ID, 'custom', 'OpenAI Codex (ChatGPT account)', { command: 'codex' }, 1);
   }
 
   // The account new Claude sessions use: the main login or a token account
@@ -219,6 +221,8 @@ export class Harnesses {
     if (!h.name.trim()) throw new Error('harness needs a name');
     if (h.id === HARNESS_ID && h.type !== 'claude-code') throw new Error('Claude Code is built in');
     if (h.id === HARNESS_ID && !h.enabled) throw new Error('Claude Code is always on');
+    if (h.id === OPENAI_HARNESS_ID && (h.type !== 'custom' || h.config.command !== 'codex')) throw new Error('OpenAI Codex is built in');
+    if (h.id === OPENAI_HARNESS_ID && !h.enabled) throw new Error('OpenAI Codex is always on');
     if (h.type === 'claude-code' && !h.id) throw new Error('add Claude accounts with "Add Claude account"');
     // An account's folder is fixed at creation.
     if (h.type === 'claude-code' && h.id) h = { ...h, config: { ...h.config, configDir: this.get(h.id).config.configDir ?? '' } };
@@ -237,7 +241,7 @@ export class Harnesses {
   }
 
   async delete(id: string): Promise<void> {
-    if (id === HARNESS_ID) throw new Error('Claude Code is built in');
+    if (id === HARNESS_ID || id === OPENAI_HARNESS_ID) throw new Error('Built-in harnesses cannot be deleted');
     const h = this.get(id);
     if (h.type === 'claude-code' && h.config.mode === 'token') await keychainDelete(id);
     this.db.prepare('UPDATE projects SET default_harness_id = NULL WHERE default_harness_id = ?').run(id);
@@ -277,11 +281,12 @@ export class Harnesses {
         account: { harnessId: h.id, configDir: h.config.configDir || undefined, token },
       });
     }
-    if (resume) throw new Error(`${h.name} can't resume conversations`);
+    if (resume && h.id !== OPENAI_HARNESS_ID) throw new Error(`${h.name} can't resume conversations`);
 
     const shell = process.env.SHELL || '/bin/zsh';
     let command: string[];
-    if (h.type === 'local-model') command = ['node', join(RUNNER_DIR, 'local-agent.mjs')];
+    if (h.id === OPENAI_HARNESS_ID) command = resume ? ['codex', 'resume', resume] : ['codex'];
+    else if (h.type === 'local-model') command = ['node', join(RUNNER_DIR, 'local-agent.mjs')];
     else if (h.type === 'agent-sdk') command = ['node', h.config.script || join(RUNNER_DIR, 'sdk-agent.mjs')];
     else command = ['/bin/sh', '-c', h.config.command];
 
