@@ -11,7 +11,7 @@ import { Organize } from './Organize.tsx';
 import { putSessions, statusClass, useProjectSessions } from './sessions.ts';
 import { hub } from './hub.ts';
 import { Projects } from './Projects.tsx';
-import { openChangelog, openClaudeFiles, openErrors, openHistory, openRemote, openTerminal, replaceTerminal } from './dock.ts';
+import { openChangelog, openClaudeFiles, openErrors, openHistory, openProject, openRemote, openTerminal, replaceTerminal } from './dock.ts';
 import { Elsewhere } from './Elsewhere.tsx';
 import { Search } from './Search.tsx';
 import { Workspace } from './Workspace.tsx';
@@ -263,6 +263,11 @@ export function App() {
         if (dock && current) openChangelog(dock, current.id);
         return;
       }
+      if (e.shiftKey && k === 'p') {
+        e.preventDefault();
+        if (dock && current) openProject(dock, current.id);
+        return;
+      }
       if (!e.shiftKey && k === 't') {
         e.preventDefault();
         void newTerminal();
@@ -444,6 +449,11 @@ export function App() {
           {current && (
             <button className="search-button" onClick={() => dock && openChangelog(dock, current.id)} disabled={!dock}>
               Changelog <kbd>⌘⇧L</kbd>
+            </button>
+          )}
+          {current && (
+            <button className="search-button" onClick={() => dock && openProject(dock, current.id)} disabled={!dock} title="Info, history and search for this project">
+              Project <kbd>⌘⇧P</kbd>
             </button>
           )}
           <button

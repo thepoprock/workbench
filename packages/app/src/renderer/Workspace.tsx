@@ -11,6 +11,7 @@ import { RemotePane } from './RemotePane.tsx';
 import { ClaudePane } from './ClaudePane.tsx';
 import { bounded } from './Boundary.tsx';
 import { TerminalPane } from './TerminalPane.tsx';
+import { ProjectPane } from './ProjectPane.tsx';
 
 const components = {
   terminal: bounded('Terminal', TerminalPane),
@@ -19,6 +20,7 @@ const components = {
   errors: bounded('Errors', ErrorsPane),
   remote: bounded('Remote', RemotePane),
   claude: bounded('Claude files', ClaudePane),
+  project: bounded('Project', ProjectPane),
 };
 const tabComponents = { terminal: Tab, history: HistoryTab, plain: HistoryTab };
 const SAVE_DEBOUNCE_MS = 400;

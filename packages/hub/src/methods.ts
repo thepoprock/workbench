@@ -9,6 +9,7 @@ import { claudeProjectFolders, listClaudeFiles, readClaudeFile, writeClaudeFile 
 import { Organizer, projectName } from './organize.ts';
 import { projectsRoot } from './claude.ts';
 import { homedir } from 'node:os';
+import { projectInfo } from './projectinfo.ts';
 import { basename, dirname } from 'node:path';
 import type { ClaudeHarness } from './claude.ts';
 import type { History } from './history.ts';
@@ -211,6 +212,7 @@ export function makeDispatch(
     },
 
     'term.create': ({ projectId, cwd, cols, rows }) => terms.create(projectId, cwd, cols, rows),
+    'project.info': ({ projectId }) => projectInfo(db, toProject(getProject(projectId))),
     'term.list': ({ projectId }) => terms.list(projectId),
     'term.get': ({ sessionId }) => terms.info(sessionId),
     'term.attach': async ({ sessionId }, client) => {

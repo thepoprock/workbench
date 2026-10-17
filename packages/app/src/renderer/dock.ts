@@ -1,5 +1,6 @@
 import type { DockviewApi } from 'dockview-react';
 import type { HistoryParams } from './HistoryPane.tsx';
+import type { ProjectParams } from './ProjectPane.tsx';
 
 export function openTerminal(api: DockviewApi, sessionId: string, title: string): void {
   const existing = api.getPanel(sessionId);
@@ -77,4 +78,14 @@ export function openRemote(api: DockviewApi, url = 'https://claude.ai/code'): vo
     return existing.api.setActive();
   }
   api.addPanel({ id: 'remote', component: 'remote', tabComponent: 'plain', title: 'Remote', params: { url } });
+}
+
+// One Project pane per project (info, history, search); reopening can switch its view.
+export function openProject(api: DockviewApi, projectId: string, view?: ProjectParams['view']): void {
+  const existing = api.getPanel('project');
+  if (existing) {
+    existing.api.updateParameters({ projectId, view });
+    return existing.api.setActive();
+  }
+  api.addPanel({ id: 'project', component: 'project', tabComponent: 'plain', title: 'Project', params: { projectId, view } });
 }

@@ -122,6 +122,22 @@ export interface Idea {
   updatedAt: number;
 }
 
+// Everything a project is, in one read: git state, versions, docs, what the hub has logged, and built assets.
+export interface ProjectInfo {
+  project: Project;
+  git: {
+    branch: string | null;
+    head: { sha: string; subject: string; ts: number } | null;
+    commits: number;
+    dirty: number; // files with uncommitted changes
+    tags: { name: string; ts: number; subject: string }[]; // newest first, at most 20
+  } | null;
+  version: string | null; // package.json version, else the newest tag
+  docs: { name: string; head: string }[]; // README.md, SPEC.md, PLAN.md, IDEA.md, CHANGELOG.md: first lines
+  counts: { terminals: number; agents: number; conversations: number; commits: number; sessionsLogged: number; notes: number; errorsOpen: number };
+  assets: { dir: string; files: number; bytes: number }[]; // dist/, build/, out/, release/, assets/ when present
+}
+
 export type ChangeSource = 'git' | 'session' | 'manual';
 
 export interface ChangeEntry {
@@ -260,6 +276,7 @@ export interface Methods {
 
   // Terminals. The hub owns the PTY; clients attach/detach freely.
   'term.create': { params: { projectId: string; cwd?: string; cols: number; rows: number }; result: TermSession };
+  'project.info': { params: { projectId: string }; result: ProjectInfo };
   'term.list': { params: { projectId: string }; result: TermSession[] };
   'term.get': { params: { sessionId: string }; result: TermSession }; // live or ended
   // snapshot = serialized screen + scrollback; term.data pushes follow it.
