@@ -11,7 +11,7 @@ import { Organize } from './Organize.tsx';
 import { putSessions, statusClass, useProjectSessions, useRunningSessions } from './sessions.ts';
 import { hub } from './hub.ts';
 import { Projects } from './Projects.tsx';
-import { openChangelog, openClaudeFiles, openErrors, openHistory, openProject, openRemote, openTerminal, replaceTerminal } from './dock.ts';
+import { openChangelog, openClaudeFiles, openErrors, openHistory, openProject, openRecordings, openRemote, openTerminal, replaceTerminal } from './dock.ts';
 import { Elsewhere } from './Elsewhere.tsx';
 import { Search } from './Search.tsx';
 import { Workspace } from './Workspace.tsx';
@@ -502,6 +502,11 @@ export function App() {
           {current && (
             <button className="search-button" onClick={() => dock && openProject(dock, current.id)} disabled={!dock} title="Info, history and search for this project">
               Project <kbd>⌘⇧P</kbd>
+            </button>
+          )}
+          {current && (
+            <button className="search-button" onClick={() => dock && openRecordings(dock, current.id)} disabled={!dock} title="Voice recordings and their transcripts">
+              Recordings
             </button>
           )}
           <button

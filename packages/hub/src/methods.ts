@@ -19,7 +19,7 @@ import type { Errors } from './errors.ts';
 import type { Harnesses } from './harnesses.ts';
 import type { Terminals } from './terminals.ts';
 import { codexHistory } from './codexhistory.ts';
-import type { Voice } from './voice.ts';
+import { deleteRecording, fileRecording, listRecordings, readRecordingAudio, saveRecordingText, type Voice } from './voice.ts';
 
 type Handler<M extends Method> = (params: Methods[M]['params'], client: Client) => unknown;
 type Handlers = { [M in Method]: Handler<M> };
@@ -449,7 +449,16 @@ export function makeDispatch(
     'scrollback.read': ({ sessionId, seq }) => terms.readChunk(sessionId, seq),
 
     'voice.engine': () => voice.engineStatus(),
-    'voice.start': () => voice.start(),
+    'voice.start': ({ projectId, sessionId }) => voice.start(projectId ?? null, sessionId ?? null),
+    'voice.list': ({ projectId }) => listRecordings(projectId),
+    'voice.audio': ({ id }) => readRecordingAudio(id),
+    'voice.delete': ({ id }) => deleteRecording(id),
+    'voice.saveText': ({ id, text }) => saveRecordingText(id, text),
+    'voice.file': ({ id, projectId }) => {
+      if (projectId) getProject(projectId);
+      fileRecording(id, projectId);
+      return null;
+    },
     'voice.push': ({ id, pcm }) => voice.push(id, pcm),
     'voice.stop': ({ id }) => voice.stop(id),
     'voice.discard': ({ id }) => voice.discard(id),

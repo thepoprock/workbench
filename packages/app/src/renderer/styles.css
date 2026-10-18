@@ -236,6 +236,15 @@ body {
   flex-shrink: 0; max-width: 90px; overflow: hidden; text-overflow: ellipsis;
 }
 
+/* recordings pane */
+.rec-item { padding: 8px 8px 10px; border-radius: 6px; border-bottom: 1px solid var(--border); }
+.rec-head { display: flex; align-items: center; gap: 10px; }
+.rec-head .entry-time { width: auto; }
+.rec-spacer { flex: 1; }
+.rec-audio { height: 28px; max-width: 320px; }
+.rec-text { margin-top: 6px; line-height: 1.55; white-space: pre-wrap; }
+.rec-edit { margin-top: 6px; display: flex; flex-direction: column; gap: 6px; align-items: flex-start; }
+
 /* projects: drag to sort */
 .list li.dragging > button { opacity: .4; }
 .list li.drop-before > button { box-shadow: inset 0 2px 0 var(--accent); }

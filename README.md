@@ -105,6 +105,11 @@ live in `~/Library/Application Support/Workbench/`.
   (the largest `.bin` there is used; `WORKBENCH_WHISPER_MODEL` or the
   `voice.model` setting override it). The hub starts `whisper-server` on the
   first recording and stops it after ten idle minutes.
+- Recordings (title bar): every voice recording with its transcript — this
+  project's grouped by day, or all projects grouped by project. Play, copy,
+  edit the transcript, search, and under **More ▾** show in Finder, copy the
+  file paths, move to another project or delete. Each recording's project
+  and pane are kept in `<time>.json` beside the `.wav`/`.txt`.
 - Projects can be dragged into the order you want in the sidebar.
 - Throwaway data dir: `WORKBENCH_DATA_DIR=/some/tmp npm run dev`
 

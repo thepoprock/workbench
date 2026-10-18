@@ -80,6 +80,15 @@ export function openRemote(api: DockviewApi, url = 'https://claude.ai/code'): vo
   api.addPanel({ id: 'remote', component: 'remote', tabComponent: 'plain', title: 'Remote', params: { url } });
 }
 
+export function openRecordings(api: DockviewApi, projectId: string): void {
+  const existing = api.getPanel('recordings');
+  if (existing) {
+    existing.api.updateParameters({ projectId });
+    return existing.api.setActive();
+  }
+  api.addPanel({ id: 'recordings', component: 'recordings', tabComponent: 'plain', title: 'Recordings', params: { projectId } });
+}
+
 // One Project pane per project (info, history, search); reopening can switch its view.
 export function openProject(api: DockviewApi, projectId: string, view?: ProjectParams['view']): void {
   const existing = api.getPanel('project');

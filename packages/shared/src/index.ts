@@ -276,6 +276,18 @@ export interface VoiceUpdate {
   transcriptFile: string | null; // its transcript (.txt)
 }
 
+// A saved recording (…/Workbench/voice/<id>.wav + .txt + .json).
+export interface VoiceRecording {
+  id: string; // file name without extension
+  file: string;
+  transcriptFile: string | null;
+  text: string;
+  seconds: number;
+  createdAt: number;
+  projectId: string | null; // null: recorded before recordings were tagged, or not filed
+  sessionId: string | null;
+}
+
 export interface VoiceEngine {
   ready: boolean; // whisper-server is loaded and answering
   model: string | null; // the ggml model file it uses, if one was found
@@ -401,10 +413,16 @@ export interface Methods {
   // the final update. Progress arrives as voice.update pushes. voice.engine
   // reports (and warms up) the speech engine.
   'voice.engine': { params: Empty; result: VoiceEngine };
-  'voice.start': { params: Empty; result: VoiceUpdate };
+  'voice.start': { params: { projectId?: string | null; sessionId?: string | null }; result: VoiceUpdate };
   'voice.push': { params: { id: string; pcm: string }; result: null };
   'voice.stop': { params: { id: string }; result: VoiceUpdate };
   'voice.discard': { params: { id: string }; result: null }; // drops the recording and its files
+  // Saved recordings. projectId omitted = all; null = unfiled.
+  'voice.list': { params: { projectId?: string | null }; result: VoiceRecording[] };
+  'voice.audio': { params: { id: string }; result: string }; // the .wav, base64
+  'voice.delete': { params: { id: string }; result: null };
+  'voice.saveText': { params: { id: string; text: string }; result: null }; // edit a transcript
+  'voice.file': { params: { id: string; projectId: string | null }; result: null }; // move to a project
 
   // Dock layout per project (opaque dockview JSON).
   'layout.get': { params: { projectId: string }; result: unknown | null };

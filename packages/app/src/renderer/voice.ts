@@ -21,7 +21,7 @@ export class Recorder {
   id: string | null = null;
   onLevel: (level: number) => void = () => {};
 
-  async start(): Promise<VoiceUpdate> {
+  async start(projectId: string | null = null, sessionId: string | null = null): Promise<VoiceUpdate> {
     if (this.id) throw new Error('already recording');
     const stream = await navigator.mediaDevices.getUserMedia({
       audio: { channelCount: 1, echoCancellation: true, noiseSuppression: true, autoGainControl: true },
@@ -35,7 +35,7 @@ export class Recorder {
     try {
       await ctx.resume();
       await ctx.audioWorklet.addModule(new URL('./voice-worklet.js', import.meta.url).href);
-      const u = await hub.call('voice.start', {});
+      const u = await hub.call('voice.start', { projectId, sessionId });
       const node = new AudioWorkletNode(ctx, 'pcm-capture', { numberOfInputs: 1, numberOfOutputs: 1, outputChannelCount: [1] });
       node.port.onmessage = (e: MessageEvent<{ pcm: ArrayBuffer; level: number }>) => {
         this.onLevel(e.data.level);

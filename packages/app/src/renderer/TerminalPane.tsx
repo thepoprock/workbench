@@ -262,7 +262,13 @@ export function TerminalPane({ params, api, containerApi }: IDockviewPanelProps<
       )}
       </div>
       {voice && session?.status === 'running' && (
-        <VoiceBar paste={paste} toggle={voiceToggle} onClose={() => setVoice(false)} />
+        <VoiceBar
+          paste={paste}
+          projectId={session.projectId}
+          sessionId={params.sessionId}
+          toggle={voiceToggle}
+          onClose={() => setVoice(false)}
+        />
       )}
       {moveError && !limited && <div className="limit-banner"><span className="limit-error">{moveError}</span></div>}
       {limited && (

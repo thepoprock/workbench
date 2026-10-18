@@ -25,6 +25,8 @@ const fileLine = (u: VoiceUpdate) => `[voice memo: ${u.file}${u.transcriptFile ?
 
 interface Props {
   paste: (text: string) => void; // typed into the pane
+  projectId: string | null; // recordings are filed under the pane's project
+  sessionId: string;
   toggle: number; // bumped by the 🎤 button / ⌘⇧V: start, or stop when recording
   onClose: () => void;
 }
@@ -34,7 +36,7 @@ interface Props {
 // and the bar goes away when you stop. Memo mode: nothing is typed until you
 // review the whole transcript and insert it (optionally with the saved files).
 // Esc cancels a recording.
-export function VoiceBar({ paste, toggle, onClose }: Props) {
+export function VoiceBar({ paste, projectId, sessionId, toggle, onClose }: Props) {
   const rec = useRef<Recorder | null>(null);
   rec.current ??= new Recorder();
   const idRef = useRef<string | null>(null);
@@ -77,7 +79,7 @@ export function VoiceBar({ paste, toggle, onClose }: Props) {
     setDraft('');
     typed.current = '';
     try {
-      const first = await rec.current!.start();
+      const first = await rec.current!.start(projectId, sessionId);
       idRef.current = first.id;
       setU(first);
     } catch (err) {

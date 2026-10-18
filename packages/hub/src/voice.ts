@@ -8,10 +8,10 @@
 // final pass, so a failed engine never loses what was said.
 import { spawn, type ChildProcess } from 'node:child_process';
 import { randomUUID } from 'node:crypto';
-import { accessSync, constants, existsSync, mkdirSync, readdirSync, rmSync, statSync, writeFileSync } from 'node:fs';
+import { accessSync, constants, existsSync, mkdirSync, readdirSync, readFileSync, rmSync, statSync, writeFileSync } from 'node:fs';
 import { createServer, type AddressInfo } from 'node:net';
 import { delimiter, join } from 'node:path';
-import type { VoiceEngine, VoiceUpdate } from '@workbench/shared';
+import type { VoiceEngine, VoiceRecording, VoiceUpdate } from '@workbench/shared';
 import type { DB } from './db/index.ts';
 import { dataDir } from './paths.ts';
 
@@ -285,6 +285,9 @@ class Engine {
 
 interface Rec {
   u: VoiceUpdate;
+  projectId: string | null; // where it was recorded (for the Recordings pane)
+  sessionId: string | null;
+  startedAt: number;
   chunks: Buffer[];
   bytes: number;
   committed: number; // byte offset: audio before this is final text
@@ -312,10 +315,10 @@ export class Voice {
     return this.engine.status();
   }
 
-  start(): VoiceUpdate {
+  start(projectId: string | null = null, sessionId: string | null = null): VoiceUpdate {
     const id = randomUUID();
     const u: VoiceUpdate = { id, state: 'starting', text: '', partial: '', seconds: 0, error: null, file: null, transcriptFile: null };
-    const rec: Rec = { u, chunks: [], bytes: 0, committed: 0, passedTo: 0, lastSeg: '', busy: null, finishing: null, timer: null };
+    const rec: Rec = { u, projectId, sessionId, startedAt: Date.now(), chunks: [], bytes: 0, committed: 0, passedTo: 0, lastSeg: '', busy: null, finishing: null, timer: null };
     this.recs.set(id, rec);
     this.engine.ensure().then(
       () => {
@@ -357,9 +360,7 @@ export class Voice {
     if (!rec) return;
     rec.finishing ??= Promise.resolve(rec.u); // stops further passes
     if (rec.timer) clearTimeout(rec.timer);
-    for (const f of [rec.u.file, rec.u.transcriptFile]) {
-      if (f) rmSync(f, { force: true });
-    }
+    if (rec.u.file) removeRecording(rec.u.file.replace(/\.wav$/, ''));
     this.recs.delete(id);
   }
 
@@ -392,6 +393,7 @@ export class Voice {
     const base = join(voiceDir, `${stamp}-${rec.u.id.slice(0, 8)}`);
     writeFileSync(`${base}.wav`, wav(Buffer.concat(rec.chunks)));
     writeFileSync(`${base}.txt`, `${rec.u.text}\n`);
+    writeFileSync(`${base}.json`, JSON.stringify({ projectId: rec.projectId, sessionId: rec.sessionId, startedAt: rec.startedAt }));
     rec.u.file = `${base}.wav`;
     rec.u.transcriptFile = `${base}.txt`;
   }
@@ -487,4 +489,70 @@ export class Voice {
     rec.u.error = null;
     this.emit(rec);
   }
+}
+
+// ---- saved recordings (the Recordings pane) ----
+
+const NAME = /^[\w.-]+$/;
+const pathOf = (id: string) => {
+  if (!NAME.test(id)) throw new Error('bad recording id');
+  return join(voiceDir, id);
+};
+function removeRecording(base: string): void {
+  for (const ext of ['.wav', '.txt', '.json']) rmSync(`${base}${ext}`, { force: true });
+}
+
+// Every saved recording, newest first. Recordings made before project tags
+// existed (no .json) come back with projectId null.
+export function listRecordings(projectId?: string | null): VoiceRecording[] {
+  let names: string[];
+  try {
+    names = readdirSync(voiceDir).filter((f) => f.endsWith('.wav'));
+  } catch {
+    return [];
+  }
+  const out: VoiceRecording[] = [];
+  for (const f of names) {
+    const id = f.slice(0, -4);
+    const base = join(voiceDir, id);
+    let meta: { projectId?: string | null; sessionId?: string | null; startedAt?: number } = {};
+    try {
+      meta = JSON.parse(readFileSync(`${base}.json`, 'utf8'));
+    } catch {}
+    let text = '';
+    try {
+      text = readFileSync(`${base}.txt`, 'utf8').trim();
+    } catch {}
+    const st = statSync(`${base}.wav`);
+    out.push({
+      id,
+      file: `${base}.wav`,
+      transcriptFile: existsSync(`${base}.txt`) ? `${base}.txt` : null,
+      text,
+      seconds: Math.max(0, st.size - 44) / BPS / RATE,
+      createdAt: meta.startedAt ?? st.mtimeMs,
+      projectId: meta.projectId ?? null,
+      sessionId: meta.sessionId ?? null,
+    });
+  }
+  return out
+    .filter((r) => projectId === undefined || r.projectId === projectId)
+    .sort((a, b) => b.createdAt - a.createdAt);
+}
+
+export const readRecordingAudio = (id: string) => readFileSync(`${pathOf(id)}.wav`).toString('base64');
+export function deleteRecording(id: string): void {
+  removeRecording(pathOf(id));
+}
+export function saveRecordingText(id: string, text: string): void {
+  if (!existsSync(`${pathOf(id)}.wav`)) throw new Error('unknown recording');
+  writeFileSync(`${pathOf(id)}.txt`, `${text.trim()}\n`);
+}
+export function fileRecording(id: string, projectId: string | null): void {
+  const p = `${pathOf(id)}.json`;
+  let meta: Record<string, unknown> = {};
+  try {
+    meta = JSON.parse(readFileSync(p, 'utf8'));
+  } catch {}
+  writeFileSync(p, JSON.stringify({ ...meta, projectId }));
 }
