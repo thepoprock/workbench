@@ -19,6 +19,7 @@ import type { Errors } from './errors.ts';
 import type { Harnesses } from './harnesses.ts';
 import type { Terminals } from './terminals.ts';
 import { codexHistory } from './codexhistory.ts';
+import type { JobMailWatch } from './jobmail.ts';
 import { deleteRecording, fileRecording, listRecordings, readRecordingAudio, saveRecordingText, type Voice } from './voice.ts';
 
 type Handler<M extends Method> = (params: Methods[M]['params'], client: Client) => unknown;
@@ -62,6 +63,7 @@ export function makeDispatch(
   errors: Errors,
   harnesses: Harnesses,
   voice: Voice,
+  jobmail: JobMailWatch,
   onAccountUpdate: (harnessId: string) => void,
   onProjectUpdate: (project: Project) => void,
   info: Omit<HubInfo, 'schemaVersion' | 'protocol'>,
@@ -448,6 +450,14 @@ export function makeDispatch(
     'scrollback.chunks': ({ sessionId }) => ({ session: terms.info(sessionId), chunks: terms.chunks(sessionId) }),
     'scrollback.read': ({ sessionId, seq }) => terms.readChunk(sessionId, seq),
 
+    'jobmail.status': () => jobmail.status(),
+    'jobmail.list': () => jobmail.list(),
+    'jobmail.configure': ({ user, password }) => jobmail.configure(user, password),
+    'jobmail.check': async () => ({ added: await jobmail.check() }),
+    'jobmail.seen': ({ id }) => {
+      jobmail.markSeen(id);
+      return null;
+    },
     'voice.engine': () => voice.engineStatus(),
     'voice.start': ({ projectId, sessionId }) => voice.start(projectId ?? null, sessionId ?? null),
     'voice.list': ({ projectId }) => listRecordings(projectId),

@@ -11,7 +11,7 @@ import { Organize } from './Organize.tsx';
 import { putSessions, statusClass, useProjectSessions, useRunningSessions } from './sessions.ts';
 import { hub } from './hub.ts';
 import { Projects } from './Projects.tsx';
-import { openChangelog, openClaudeFiles, openErrors, openHistory, openProject, openRecordings, openRemote, openTerminal, replaceTerminal } from './dock.ts';
+import { openChangelog, openClaudeFiles, openErrors, openHistory, openJobMail, openProject, openRecordings, openRemote, openTerminal, replaceTerminal } from './dock.ts';
 import { Elsewhere } from './Elsewhere.tsx';
 import { Search } from './Search.tsx';
 import { Workspace } from './Workspace.tsx';
@@ -75,6 +75,22 @@ export function App() {
   const [managingHarnesses, setManagingHarnesses] = useState(false);
   const [organizing, setOrganizing] = useState(false);
   const [errorCounts, setErrorCounts] = useState<Record<string, number>>({});
+  const [jobUnseen, setJobUnseen] = useState(0);
+  // Replies to job applications: badge count, and a notification for each new one.
+  useEffect(() => {
+    if (status !== 'connected') return;
+    const refreshJobs = () => void hub.call('jobmail.status', {}).then((s) => setJobUnseen(s.unseen), () => {});
+    refreshJobs();
+    return hub.onPush((p) => {
+      if (p.event !== 'jobmail.update') return;
+      refreshJobs();
+      if (p.data.alert) {
+        const k = p.data.mail.kind;
+        const what = k === 'interview' ? 'wants to talk (interview / next steps)' : k === 'rejection' ? 'replied: not moving forward' : k === 'received' ? 'received your application' : 'sent a message';
+        window.workbench.notify(`${p.data.mail.company} ${what}`, p.data.mail.subject);
+      }
+    });
+  }, [status]);
   // An action waiting for a given project's dock (opening a search hit in another project).
   const [pending, setPending] = useState<{ projectId: string; run: (dock: DockviewApi) => void } | null>(null);
 
@@ -507,6 +523,11 @@ export function App() {
           {current && (
             <button className="search-button" onClick={() => dock && openRecordings(dock, current.id)} disabled={!dock} title="Voice recordings and their transcripts">
               Recordings
+            </button>
+          )}
+          {current && (
+            <button className={`search-button ${jobUnseen ? 'has-errors' : ''}`} onClick={() => dock && openJobMail(dock)} disabled={!dock} title="Replies to your job applications (Gmail)">
+              Job inbox{jobUnseen ? ` (${jobUnseen})` : ''}
             </button>
           )}
           <button

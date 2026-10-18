@@ -245,6 +245,18 @@ body {
 .rec-text { margin-top: 6px; line-height: 1.55; white-space: pre-wrap; }
 .rec-edit { margin-top: 6px; display: flex; flex-direction: column; gap: 6px; align-items: flex-start; }
 
+/* job inbox */
+.jm-setup { max-width: 640px; display: flex; flex-direction: column; gap: 8px; padding: 12px 0; }
+.jm-setup p { margin: 0; line-height: 1.5; }
+.jm-setup a { color: var(--accent); }
+.jm-counts { display: flex; gap: 14px; flex-wrap: wrap; padding: 8px 0 4px; font-size: 12px; color: var(--muted); }
+.jm-count b { color: var(--text); }
+.jm-unseen { background: rgba(106, 168, 255, .07); }
+.badge.jm-interview { background: rgba(63, 185, 80, .18); color: var(--ok); }
+.badge.jm-rejection { background: rgba(248, 81, 73, .15); color: var(--bad); }
+.badge.jm-received { background: rgba(106, 168, 255, .15); color: var(--accent); }
+.badge.jm-other { background: rgba(138, 144, 156, .18); color: var(--text); }
+
 /* projects: drag to sort */
 .list li.dragging > button { opacity: .4; }
 .list li.drop-before > button { box-shadow: inset 0 2px 0 var(--accent); }

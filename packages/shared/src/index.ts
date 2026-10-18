@@ -93,6 +93,8 @@ export interface Pushes {
   'errors.update': { error: ErrorGroup; alert: boolean };
   // A recording's transcript grew, finished or failed (see VoiceUpdate).
   'voice.update': VoiceUpdate;
+  // A reply to a job application arrived (alert = notify; false during the first sweep).
+  'jobmail.update': { mail: JobMail; alert: boolean };
 }
 
 // A past Claude Code conversation, read from ~/.claude/projects/<cwd>/<id>.jsonl.
@@ -288,6 +290,27 @@ export interface VoiceRecording {
   sessionId: string | null;
 }
 
+// Job-application replies found in Gmail (see hub/src/jobmail.ts).
+export type JobMailKind = 'interview' | 'rejection' | 'received' | 'other';
+export interface JobMail {
+  id: string; // Message-ID
+  ts: number;
+  from: string;
+  subject: string;
+  company: string; // a company from ~/Desktop/Job Applications, or "(unmatched company)"
+  kind: JobMailKind;
+  snippet: string;
+  seen: boolean;
+}
+export interface JobMailStatus {
+  user: string | null; // the Gmail address being watched
+  lastCheck: number | null;
+  error: string | null;
+  count: number;
+  unseen: number;
+  companies: string[];
+}
+
 export interface VoiceEngine {
   ready: boolean; // whisper-server is loaded and answering
   model: string | null; // the ggml model file it uses, if one was found
@@ -423,6 +446,13 @@ export interface Methods {
   'voice.delete': { params: { id: string }; result: null };
   'voice.saveText': { params: { id: string; text: string }; result: null }; // edit a transcript
   'voice.file': { params: { id: string; projectId: string | null }; result: null }; // move to a project
+
+  // Job-application inbox watch (Gmail over IMAP with an app password in the Keychain).
+  'jobmail.status': { params: Empty; result: JobMailStatus };
+  'jobmail.list': { params: Empty; result: JobMail[] };
+  'jobmail.configure': { params: { user: string; password?: string }; result: JobMailStatus };
+  'jobmail.check': { params: Empty; result: { added: number } };
+  'jobmail.seen': { params: { id: string | null }; result: null }; // null = mark all
 
   // Dock layout per project (opaque dockview JSON).
   'layout.get': { params: { projectId: string }; result: unknown | null };

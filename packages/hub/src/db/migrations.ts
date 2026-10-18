@@ -205,4 +205,19 @@ export const migrations: string[] = [
 
   // 11 — projects can be ordered by hand in the sidebar (NULL = after the ordered ones, by name)
   `ALTER TABLE projects ADD COLUMN sort_order INTEGER;`,
+
+  // 12 — replies to job applications found in Gmail
+  `
+  CREATE TABLE jobmail (
+    id        TEXT PRIMARY KEY,
+    ts        INTEGER NOT NULL,
+    from_addr TEXT NOT NULL,
+    subject   TEXT NOT NULL,
+    company   TEXT NOT NULL,
+    kind      TEXT NOT NULL,
+    snippet   TEXT NOT NULL,
+    seen      INTEGER NOT NULL DEFAULT 0
+  );
+  CREATE INDEX jobmail_ts ON jobmail(ts);
+  `,
 ];

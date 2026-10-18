@@ -14,6 +14,7 @@ import { Changelog } from './changelog.ts';
 import { Errors } from './errors.ts';
 import { Harnesses } from './harnesses.ts';
 import { Voice } from './voice.ts';
+import { JobMailWatch } from './jobmail.ts';
 
 const VERSION = '0.0.1';
 
@@ -116,9 +117,10 @@ async function main(): Promise<void> {
   const harnesses = new Harnesses(db, terms, claude);
   harnessesRef = harnesses;
   const voice = new Voice(db, (u) => server?.broadcast({ event: 'voice.update', data: u }));
+  const jobmail = new JobMailWatch(db, (mail, alert) => server?.broadcast({ event: 'jobmail.update', data: { mail, alert } }));
   const hubOps: HubOps = {};
   const dispatch = makeDispatch(
-    db, terms, claude, history, ideas, changelog, errors, harnesses, voice,
+    db, terms, claude, history, ideas, changelog, errors, harnesses, voice, jobmail,
     (harnessId) => server?.broadcast({ event: 'account.update', data: { harnessId } }),
     (project) => server?.broadcast({ event: 'project.update', data: project }),
     {
@@ -178,6 +180,7 @@ async function main(): Promise<void> {
     log(`${signal}: shutting down`);
     terms.shutdown();
     voice.shutdown();
+    jobmail.shutdown();
     ideas.shutdown();
     errors.shutdown();
     await server?.close();

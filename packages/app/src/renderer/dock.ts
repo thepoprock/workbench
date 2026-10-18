@@ -89,6 +89,12 @@ export function openRecordings(api: DockviewApi, projectId: string): void {
   api.addPanel({ id: 'recordings', component: 'recordings', tabComponent: 'plain', title: 'Recordings', params: { projectId } });
 }
 
+export function openJobMail(api: DockviewApi): void {
+  const existing = api.getPanel('jobmail');
+  if (existing) return existing.api.setActive();
+  api.addPanel({ id: 'jobmail', component: 'jobmail', tabComponent: 'plain', title: 'Job inbox', params: {} });
+}
+
 // One Project pane per project (info, history, search); reopening can switch its view.
 export function openProject(api: DockviewApi, projectId: string, view?: ProjectParams['view']): void {
   const existing = api.getPanel('project');
