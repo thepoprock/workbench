@@ -19,6 +19,7 @@ import type { Errors } from './errors.ts';
 import type { Harnesses } from './harnesses.ts';
 import type { Terminals } from './terminals.ts';
 import { codexHistory } from './codexhistory.ts';
+import type { Voice } from './voice.ts';
 
 type Handler<M extends Method> = (params: Methods[M]['params'], client: Client) => unknown;
 type Handlers = { [M in Method]: Handler<M> };
@@ -60,6 +61,7 @@ export function makeDispatch(
   changelog: Changelog,
   errors: Errors,
   harnesses: Harnesses,
+  voice: Voice,
   onAccountUpdate: (harnessId: string) => void,
   onProjectUpdate: (project: Project) => void,
   info: Omit<HubInfo, 'schemaVersion' | 'protocol'>,
@@ -167,7 +169,7 @@ export function makeDispatch(
     'project.list': ({ includeArchived }) =>
       (
         db
-          .prepare(`SELECT * FROM projects ${includeArchived ? '' : 'WHERE archived = 0'} ORDER BY name COLLATE NOCASE`)
+          .prepare(`SELECT * FROM projects ${includeArchived ? '' : 'WHERE archived = 0'} ORDER BY sort_order IS NULL, sort_order, name COLLATE NOCASE`)
           .all() as unknown as ProjectRow[]
       ).map(toProject),
 
@@ -211,9 +213,25 @@ export function makeDispatch(
       return project;
     },
 
+    'project.reorder': ({ ids }) => {
+      const set = db.prepare('UPDATE projects SET sort_order = ? WHERE id = ?');
+      db.exec('BEGIN');
+      try {
+        ids.forEach((id, i) => set.run(i, id));
+        db.exec('COMMIT');
+      } catch (err) {
+        db.exec('ROLLBACK');
+        throw err;
+      }
+      // Other windows reload their list on any project push.
+      if (ids[0]) onProjectUpdate(toProject(getProject(ids[0])));
+      return null;
+    },
+
     'term.create': ({ projectId, cwd, cols, rows }) => terms.create(projectId, cwd, cols, rows),
     'project.info': ({ projectId }) => projectInfo(db, toProject(getProject(projectId))),
     'term.list': ({ projectId }) => terms.list(projectId),
+    'term.running': () => terms.running(),
     'term.get': ({ sessionId }) => terms.info(sessionId),
     'term.attach': async ({ sessionId }, client) => {
       const { session, snapshot, release } = await terms.attach(sessionId, client);
@@ -404,6 +422,12 @@ export function makeDispatch(
     'history.search': ({ query, projectId, limit }) => history.search(query, projectId, limit),
     'scrollback.chunks': ({ sessionId }) => ({ session: terms.info(sessionId), chunks: terms.chunks(sessionId) }),
     'scrollback.read': ({ sessionId, seq }) => terms.readChunk(sessionId, seq),
+
+    'voice.engine': () => voice.engineStatus(),
+    'voice.start': () => voice.start(),
+    'voice.push': ({ id, pcm }) => voice.push(id, pcm),
+    'voice.stop': ({ id }) => voice.stop(id),
+    'voice.discard': ({ id }) => voice.discard(id),
 
     'layout.get': ({ projectId }) => {
       const row = db.prepare("SELECT dock FROM layouts WHERE project_id = ? AND name = 'current'").get(projectId) as

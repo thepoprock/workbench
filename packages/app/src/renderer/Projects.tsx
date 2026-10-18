@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useState, type DragEvent } from 'react';
 import type { Project } from '@workbench/shared';
 import { hub } from './hub.ts';
 
@@ -17,8 +17,13 @@ export function Projects({ onImport, onOrganize, errorCounts, projects, selected
   const [editing, setEditing] = useState<string | null>(null);
   const [draft, setDraft] = useState('');
   const [showArchived, setShowArchived] = useState(false);
+  // Drag to sort: the order shown while the hub is told, and the item in flight.
+  const [order, setOrder] = useState<string[] | null>(null);
+  const [drag, setDrag] = useState<{ id: string; over: string | null; after: boolean } | null>(null);
+  useEffect(() => setOrder(null), [projects]); // the hub's order arrived
 
-  const active = projects.filter((p) => !p.archived);
+  const stored = projects.filter((p) => !p.archived);
+  const active = order ? order.map((id) => stored.find((p) => p.id === id)).filter((p): p is Project => !!p) : stored;
   const archived = projects.filter((p) => p.archived);
 
   const run = async (fn: () => Promise<unknown>) => {
@@ -84,8 +89,32 @@ export function Projects({ onImport, onOrganize, errorCounts, projects, selected
     }
   };
 
+  const dragOver = (p: Project, e: DragEvent<HTMLElement>) => {
+    if (!drag || drag.id === p.id) return;
+    e.preventDefault();
+    e.dataTransfer.dropEffect = 'move';
+    const r = e.currentTarget.getBoundingClientRect();
+    const after = e.clientY > r.top + r.height / 2;
+    if (drag.over !== p.id || drag.after !== after) setDrag({ ...drag, over: p.id, after });
+  };
+
+  const drop = (target: Project, e: DragEvent<HTMLElement>) => {
+    e.preventDefault();
+    if (!drag || drag.id === target.id) return setDrag(null);
+    const ids = active.map((p) => p.id).filter((id) => id !== drag.id);
+    ids.splice(ids.indexOf(target.id) + (drag.after ? 1 : 0), 0, drag.id);
+    setDrag(null);
+    setOrder(ids);
+    void run(() => hub.call('project.reorder', { ids })).finally(() => setOrder(null));
+  };
+
   const item = (p: Project) => (
-    <li key={p.id}>
+    <li
+      key={p.id}
+      className={[drag?.id === p.id ? 'dragging' : '', drag?.over === p.id ? (drag.after ? 'drop-after' : 'drop-before') : ''].join(' ')}
+      onDragOver={(e) => !p.archived && dragOver(p, e)}
+      onDrop={(e) => !p.archived && drop(p, e)}
+    >
       {editing === p.id ? (
         <input
           className="rename"
@@ -102,6 +131,13 @@ export function Projects({ onImport, onOrganize, errorCounts, projects, selected
       ) : (
         <button
           className={[p.id === selected ? 'active' : '', p.archived ? 'ended' : ''].join(' ')}
+          draggable={!p.archived}
+          onDragStart={(e) => {
+            e.dataTransfer.setData('text/plain', p.id);
+            e.dataTransfer.effectAllowed = 'move';
+            setDrag({ id: p.id, over: null, after: false });
+          }}
+          onDragEnd={() => setDrag(null)}
           onClick={() => !p.archived && onSelect(p.id)}
           onDoubleClick={() => !p.archived && startRename(p)}
           onContextMenu={(e) => {

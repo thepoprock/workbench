@@ -91,6 +91,8 @@ export interface Pushes {
   'agent.limit': { sessionId: string; harnessId: string | null; movedTo: TermSession | null };
   // An error was recorded or changed. alert = show a notification for it.
   'errors.update': { error: ErrorGroup; alert: boolean };
+  // A recording's transcript grew, finished or failed (see VoiceUpdate).
+  'voice.update': VoiceUpdate;
 }
 
 // A past Claude Code conversation, read from ~/.claude/projects/<cwd>/<id>.jsonl.
@@ -259,6 +261,28 @@ export interface ScrollbackChunk {
   tsEnd: number;
 }
 
+// Voice: microphone audio streamed from the app as 16 kHz Int16 PCM and
+// transcribed in the hub by whisper.cpp while it arrives.
+export type VoiceState = 'starting' | 'listening' | 'finishing' | 'done' | 'failed';
+
+export interface VoiceUpdate {
+  id: string;
+  state: VoiceState; // starting: the model is loading (audio is buffered meanwhile)
+  text: string; // settled transcript; only ever grows by appending
+  partial: string; // the tail still being recognised; may change
+  seconds: number; // audio received so far
+  error: string | null; // last engine error (recognition retries; audio is kept)
+  file: string | null; // the saved recording (.wav), once finished
+  transcriptFile: string | null; // its transcript (.txt)
+}
+
+export interface VoiceEngine {
+  ready: boolean; // whisper-server is loaded and answering
+  model: string | null; // the ggml model file it uses, if one was found
+  server: string | null; // the whisper-server binary, if installed
+  error: string | null;
+}
+
 type Empty = Record<string, never>;
 
 // Method name → params/result. Add methods here; both sides are typed off it.
@@ -273,11 +297,14 @@ export interface Methods {
   };
   // Refused while the project has running terminals.
   'project.archive': { params: { id: string; archived: boolean }; result: Project };
+  // Sidebar order (drag to sort): ids in the order wanted; projects not listed follow, by name.
+  'project.reorder': { params: { ids: string[] }; result: null };
 
   // Terminals. The hub owns the PTY; clients attach/detach freely.
   'term.create': { params: { projectId: string; cwd?: string; cols: number; rows: number }; result: TermSession };
   'project.info': { params: { projectId: string }; result: ProjectInfo };
   'term.list': { params: { projectId: string }; result: TermSession[] };
+  'term.running': { params: Empty; result: TermSession[] }; // every running session, any project
   'term.get': { params: { sessionId: string }; result: TermSession }; // live or ended
   // snapshot = serialized screen + scrollback; term.data pushes follow it.
   'term.attach': { params: { sessionId: string }; result: { session: TermSession; snapshot: string } };
@@ -366,6 +393,16 @@ export interface Methods {
   // Full saved output of a session, paged by chunk (the last may still be growing).
   'scrollback.chunks': { params: { sessionId: string }; result: { session: TermSession; chunks: ScrollbackChunk[] } };
   'scrollback.read': { params: { sessionId: string; seq: number }; result: string };
+
+  // Voice. Start, stream pcm (base64 Int16LE mono 16 kHz) with notifies, then
+  // stop: the hub finishes recognition, saves the wav + transcript and returns
+  // the final update. Progress arrives as voice.update pushes. voice.engine
+  // reports (and warms up) the speech engine.
+  'voice.engine': { params: Empty; result: VoiceEngine };
+  'voice.start': { params: Empty; result: VoiceUpdate };
+  'voice.push': { params: { id: string; pcm: string }; result: null };
+  'voice.stop': { params: { id: string }; result: VoiceUpdate };
+  'voice.discard': { params: { id: string }; result: null }; // drops the recording and its files
 
   // Dock layout per project (opaque dockview JSON).
   'layout.get': { params: { projectId: string }; result: unknown | null };

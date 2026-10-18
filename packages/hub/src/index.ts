@@ -13,6 +13,7 @@ import { Ideas } from './ideas.ts';
 import { Changelog } from './changelog.ts';
 import { Errors } from './errors.ts';
 import { Harnesses } from './harnesses.ts';
+import { Voice } from './voice.ts';
 
 const VERSION = '0.0.1';
 
@@ -114,9 +115,10 @@ async function main(): Promise<void> {
   }
   const harnesses = new Harnesses(db, terms, claude);
   harnessesRef = harnesses;
+  const voice = new Voice(db, (u) => server?.broadcast({ event: 'voice.update', data: u }));
   const hubOps: HubOps = {};
   const dispatch = makeDispatch(
-    db, terms, claude, history, ideas, changelog, errors, harnesses,
+    db, terms, claude, history, ideas, changelog, errors, harnesses, voice,
     (harnessId) => server?.broadcast({ event: 'account.update', data: { harnessId } }),
     (project) => server?.broadcast({ event: 'project.update', data: project }),
     {
@@ -175,6 +177,7 @@ async function main(): Promise<void> {
   const shutdown = async (signal: string) => {
     log(`${signal}: shutting down`);
     terms.shutdown();
+    voice.shutdown();
     ideas.shutdown();
     errors.shutdown();
     await server?.close();

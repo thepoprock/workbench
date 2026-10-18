@@ -40,6 +40,12 @@ export function useProjectSessions(projectId: string | null): TermSession[] {
   return [...sessions.values()].filter((s) => s.projectId === projectId).sort((a, b) => a.startedAt - b.startedAt);
 }
 
+// Every running session in any project, oldest first.
+export function useRunningSessions(): TermSession[] {
+  useSyncExternalStore(subscribe, () => version);
+  return [...sessions.values()].filter((s) => s.status === 'running').sort((a, b) => a.startedAt - b.startedAt);
+}
+
 // Dot class for a session: agent state while running, else ended.
 export function statusClass(s: TermSession | undefined): string {
   if (!s || s.status !== 'running') return 'ended';

@@ -154,8 +154,9 @@ body {
 
 /* terminal pane extras */
 .term-wrap { position: relative; width: 100%; height: 100%; }
+.term-tools { position: absolute; top: 6px; right: 14px; z-index: 5; display: flex; align-items: center; gap: 6px; }
 .earlier {
-  position: absolute; top: 6px; right: 14px; z-index: 5; font: inherit; font-size: 11px;
+  font: inherit; font-size: 11px;
   background: var(--panel); color: var(--muted); border: 1px solid var(--border); border-radius: 6px;
   padding: 3px 8px; opacity: 0; transition: opacity .15s;
 }
@@ -163,7 +164,7 @@ body {
 .earlier:hover { color: var(--text); border-color: var(--accent); }
 
 .account-chip {
-  position: absolute; top: 6px; right: 120px; z-index: 5; font: inherit; font-size: 11px;
+  font: inherit; font-size: 11px;
   background: var(--panel); color: var(--accent); border: 1px solid rgba(106, 168, 255, .4);
   border-radius: 10px; padding: 2px 9px;
 }
@@ -181,6 +182,58 @@ body {
 }
 .limit-banner button:disabled { opacity: .6; }
 .limit-error { color: var(--bad); }
+
+/* voice: dictation and memos into a pane */
+.voice-toggle {
+  font: inherit; font-size: 12px; line-height: 1; background: var(--panel); color: var(--muted);
+  border: 1px solid var(--border); border-radius: 6px; padding: 3px 7px; opacity: .55; transition: opacity .15s;
+}
+.term-wrap:hover .voice-toggle, .voice-toggle.on { opacity: 1; }
+.voice-toggle:hover { border-color: var(--accent); }
+.voice-toggle.on { border-color: var(--accent); background: var(--accent-bg); }
+.voice-bar {
+  position: absolute; left: 12px; right: 12px; bottom: 12px; z-index: 7; display: flex; flex-direction: column; gap: 8px;
+  padding: 10px 12px; border-radius: 8px; font-size: 12px; background: var(--panel); border: 1px solid var(--border);
+  box-shadow: 0 8px 30px rgba(0, 0, 0, .45); user-select: text;
+}
+.voice-row { display: flex; align-items: center; gap: 10px; min-width: 0; }
+.voice-rec {
+  font: inherit; font-size: 12px; border-radius: 6px; padding: 4px 12px; white-space: nowrap;
+  background: var(--accent-bg); color: var(--accent); border: 1px solid rgba(106, 168, 255, .45);
+}
+.voice-rec.on { background: #2a1617; color: var(--bad); border-color: rgba(248, 81, 73, .5); }
+.voice-rec:disabled { opacity: .5; }
+.voice-level { width: 80px; height: 6px; background: var(--bg); border-radius: 3px; overflow: hidden; flex-shrink: 0; }
+.voice-level i { display: block; height: 100%; background: var(--ok); transition: width .08s; }
+.voice-time { color: var(--muted); font-variant-numeric: tabular-nums; }
+.voice-live { display: flex; align-items: center; gap: 5px; color: var(--muted); white-space: nowrap; }
+.voice-live input { margin: 0; }
+.voice-status { margin-left: auto; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.voice-close { background: none; border: 0; color: var(--muted); font-size: 16px; line-height: 1; padding: 0 2px; }
+.voice-close:hover { color: var(--text); }
+.voice-text { max-height: 120px; overflow-y: auto; line-height: 1.5; white-space: pre-wrap; }
+.voice-partial { color: var(--muted); }
+.voice-draft {
+  width: 100%; resize: vertical; font: inherit; font-size: 12.5px; line-height: 1.5; padding: 8px 10px; border-radius: 6px;
+  border: 1px solid var(--border); background: var(--bg); color: var(--text); outline: none;
+}
+.voice-draft:focus { border-color: var(--accent); }
+.voice-actions { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.voice-file { margin-left: auto; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 50%; }
+.voice-error { color: var(--bad); }
+
+/* live terminals across projects */
+.list button.elsewhere { color: var(--muted); }
+.list button.elsewhere:hover { color: var(--text); }
+.live-project {
+  font-size: 10px; color: var(--muted); border: 1px solid var(--border); border-radius: 4px; padding: 0 5px;
+  flex-shrink: 0; max-width: 90px; overflow: hidden; text-overflow: ellipsis;
+}
+
+/* projects: drag to sort */
+.list li.dragging > button { opacity: .4; }
+.list li.drop-before > button { box-shadow: inset 0 2px 0 var(--accent); }
+.list li.drop-after > button { box-shadow: inset 0 -2px 0 var(--accent); }
 
 /* history viewer */
 .history-pane { display: flex; flex-direction: column; width: 100%; height: 100%; }

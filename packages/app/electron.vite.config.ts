@@ -20,6 +20,11 @@ export default defineConfig({
   renderer: {
     root: resolve(__dirname, 'src/renderer'),
     plugins: [react()],
-    build: { rollupOptions: { input: resolve(__dirname, 'src/renderer/index.html') } },
+    build: {
+      rollupOptions: { input: resolve(__dirname, 'src/renderer/index.html') },
+      // Scripts loaded by URL (the voice AudioWorklet) must be real files: the
+      // page's CSP (script-src 'self') refuses data: URLs.
+      assetsInlineLimit: (file: string) => (file.endsWith('.js') ? false : undefined),
+    },
   },
 });

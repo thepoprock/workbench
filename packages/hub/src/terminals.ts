@@ -304,6 +304,11 @@ export class Terminals {
     if (info) this.event(info, kind, payload, text);
   }
 
+  // Every running session, any project (the sidebar's live list).
+  running(): TermSession[] {
+    return [...this.live.values()].filter((s) => s.proc).map((s) => s.info);
+  }
+
   list(projectId: string): TermSession[] {
     const rows = this.db
       .prepare(

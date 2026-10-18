@@ -8,7 +8,7 @@ import { accountLabel, loadAccounts, useAccounts } from './accounts.ts';
 import { Agents } from './Agents.tsx';
 import { HarnessManager } from './HarnessManager.tsx';
 import { Organize } from './Organize.tsx';
-import { putSessions, statusClass, useProjectSessions } from './sessions.ts';
+import { putSessions, statusClass, useProjectSessions, useRunningSessions } from './sessions.ts';
 import { hub } from './hub.ts';
 import { Projects } from './Projects.tsx';
 import { openChangelog, openClaudeFiles, openErrors, openHistory, openProject, openRemote, openTerminal, replaceTerminal } from './dock.ts';
@@ -142,6 +142,24 @@ export function App() {
     if (!current || status !== 'connected') return;
     hub.call('term.list', { projectId: current.id }).then(putSessions, (err) => setError((err as Error).message));
   }, [current?.id, status]);
+  // Every running session, any project, for the sidebar's live list.
+  const live = useRunningSessions();
+  useEffect(() => {
+    if (status !== 'connected') return;
+    // A hub older than this app has no term.running: the list then shows this project's sessions only.
+    hub.call('term.running', {}).then(putSessions, () => {});
+  }, [status]);
+
+  // Open a session's pane, switching to its project first when needed.
+  const openSession = useCallback(
+    (s: TermSession) => {
+      if (!s.projectId) return;
+      if (s.projectId === current?.id && dock) return openTerminal(dock, s.id, s.title);
+      setSelected(s.projectId);
+      setPending({ projectId: s.projectId, run: (d) => openTerminal(d, s.id, s.title) });
+    },
+    [current?.id, dock, setSelected],
+  );
 
   const newTerminal = useCallback(async () => {
     if (!current || !dock) return;
@@ -268,6 +286,11 @@ export function App() {
         if (dock && current) openProject(dock, current.id);
         return;
       }
+      if (e.shiftKey && k === 'v') {
+        e.preventDefault();
+        window.dispatchEvent(new Event('workbench:voice')); // the active terminal pane answers
+        return;
+      }
       if (!e.shiftKey && k === 't') {
         e.preventDefault();
         void newTerminal();
@@ -318,8 +341,16 @@ export function App() {
 
   const terminals = sessions.filter((s) => s.kind === 'terminal');
   const agents = sessions.filter((s) => s.kind === 'agent');
-  const running = terminals.filter((s) => s.status === 'running');
   const ended = terminals.filter((s) => s.status !== 'running');
+  // Live list: this project's sessions first, then the others by project name; oldest first within each.
+  const projectName = (id: string | null) => projects.find((p) => p.id === id)?.name ?? '';
+  const running = live
+    .filter((s) => s.projectId)
+    .sort((a, b) => {
+      const ca = a.projectId === current?.id ? 0 : 1;
+      const cb = b.projectId === current?.id ? 0 : 1;
+      return ca - cb || projectName(a.projectId).localeCompare(projectName(b.projectId)) || a.startedAt - b.startedAt;
+    });
 
   return (
     <div className="shell">
@@ -393,22 +424,32 @@ export function App() {
           />
         )}
 
-        {current && (
-          <>
-            <div className="section-label with-action">
-              Terminals
-              <button onClick={() => void newTerminal()} title="New terminal (⌘T)" disabled={!dock}>
-                +
+        <div className="section-label with-action">
+          Live terminals
+          <button onClick={() => void newTerminal()} title="New terminal (⌘T)" disabled={!dock || !current}>
+            +
+          </button>
+        </div>
+        <ul className="list">
+          {running.map((s) => (
+            <li key={s.id}>
+              <button
+                className={s.projectId === current?.id ? '' : 'elsewhere'}
+                onClick={() => openSession(s)}
+                title={`${projectName(s.projectId)} — ${s.cwd}`}
+              >
+                <span className={`dot ${statusClass(s)}`} />
+                <span className="idea-name">{s.title}</span>
+                {s.projectId !== current?.id && <span className="live-project">{projectName(s.projectId)}</span>}
               </button>
-            </div>
+            </li>
+          ))}
+          {running.length === 0 && <li className="empty">None running</li>}
+        </ul>
+        {current && ended.length > 0 && (
+          <>
+            <div className="section-label">Ended</div>
             <ul className="list">
-              {running.map((s) => (
-                <li key={s.id}>
-                  <button onClick={() => dock && openTerminal(dock, s.id, s.title)} title={s.cwd}>
-                    <span className={`dot ${statusClass(s)}`} /> {s.title}
-                  </button>
-                </li>
-              ))}
               {ended.map((s) => (
                 <li key={s.id}>
                   <button className="ended" onClick={() => dock && openTerminal(dock, s.id, s.title)} title={s.cwd}>
@@ -416,7 +457,6 @@ export function App() {
                   </button>
                 </li>
               ))}
-              {terminals.length === 0 && <li className="empty">None</li>}
             </ul>
           </>
         )}

@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import type { IDockviewPanelProps } from 'dockview-react';
 import { Terminal } from '@xterm/xterm';
 import { FitAddon } from '@xterm/addon-fit';
@@ -9,6 +9,7 @@ import { hub } from './hub.ts';
 import { openHistory, replaceTerminal } from './dock.ts';
 import { useSession } from './sessions.ts';
 import { accountLabel, mainFolder, useAccounts } from './accounts.ts';
+import { VoiceBar } from './VoiceBar.tsx';
 
 export interface TerminalParams {
   sessionId: string;
@@ -37,6 +38,8 @@ function endNotice(s: TermSession): string | null {
 // unmounting only detaches — the process keeps running in the hub.
 export function TerminalPane({ params, api, containerApi }: IDockviewPanelProps<TerminalParams>) {
   const host = useRef<HTMLDivElement>(null);
+  const termRef = useRef<Terminal | null>(null);
+  const [voice, setVoice] = useState(false);
   const session = useSession(params.sessionId);
   const accounts = useAccounts();
   const [moving, setMoving] = useState<string | null>(null);
@@ -57,6 +60,25 @@ export function TerminalPane({ params, api, containerApi }: IDockviewPanelProps<
     }
   };
 
+  // ⌘⇧V (App) toggles the voice bar on the active pane.
+  useEffect(() => {
+    const toggle = () => {
+      if (api.isActive) setVoice((v) => !v);
+    };
+    window.addEventListener('workbench:voice', toggle);
+    return () => window.removeEventListener('workbench:voice', toggle);
+  }, [api]);
+
+  // Text into the pane the way a paste arrives. A program that asked for
+  // bracketed paste (Claude Code) gets newlines intact; a plain shell would run
+  // each line, so there they become spaces.
+  const paste = useCallback((text: string) => {
+    const term = termRef.current;
+    if (!term) return;
+    term.paste(term.modes.bracketedPasteMode ? text : text.replace(/\s*\n+\s*/g, ' '));
+    term.focus();
+  }, []);
+
   useEffect(() => {
     const sessionId = params.sessionId;
     const term = new Terminal({
@@ -72,6 +94,7 @@ export function TerminalPane({ params, api, containerApi }: IDockviewPanelProps<
     const fit = new FitAddon();
     term.loadAddon(fit);
     term.open(host.current!);
+    termRef.current = term;
     try {
       const gl = new WebglAddon();
       gl.onContextLoss(() => gl.dispose());
@@ -154,6 +177,7 @@ export function TerminalPane({ params, api, containerApi }: IDockviewPanelProps<
       offPush();
       offStatus();
       hub.notify('term.detach', { sessionId });
+      termRef.current = null;
       term.dispose();
     };
   }, [params.sessionId, api]);
@@ -161,6 +185,7 @@ export function TerminalPane({ params, api, containerApi }: IDockviewPanelProps<
   return (
     <div className="term-wrap">
       <div className="term-host" ref={host} />
+      <div className="term-tools">
       {session?.status === 'running' && alternatives.length > 0 && (
         <button
           className="account-chip"
@@ -182,6 +207,25 @@ export function TerminalPane({ params, api, containerApi }: IDockviewPanelProps<
           {moving ? 'Switching…' : `${accountLabel(current)} ▾`}
         </button>
       )}
+      <button
+        className="earlier"
+        title="Browse this session's full saved output"
+        onClick={() => openHistory(containerApi, { sessionId: params.sessionId })}
+      >
+        Earlier output
+      </button>
+      {session?.status === 'running' && (
+        <button
+          className={`voice-toggle ${voice ? 'on' : ''}`}
+          title="Voice: dictate into this pane, or record a memo and insert it (⌘⇧V)"
+          onClick={() => setVoice((v) => !v)}
+          aria-pressed={voice}
+        >
+          🎤
+        </button>
+      )}
+      </div>
+      {voice && session?.status === 'running' && <VoiceBar paste={paste} onClose={() => setVoice(false)} />}
       {moveError && !limited && <div className="limit-banner"><span className="limit-error">{moveError}</span></div>}
       {limited && (
         <div className="limit-banner">
@@ -197,13 +241,6 @@ export function TerminalPane({ params, api, containerApi }: IDockviewPanelProps<
           ))}
         </div>
       )}
-      <button
-        className="earlier"
-        title="Browse this session's full saved output"
-        onClick={() => openHistory(containerApi, { sessionId: params.sessionId })}
-      >
-        Earlier output
-      </button>
     </div>
   );
 }

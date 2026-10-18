@@ -202,4 +202,7 @@ export const migrations: string[] = [
   );
   CREATE INDEX conversation_projects_project ON conversation_projects(project_id);
   `,
+
+  // 11 — projects can be ordered by hand in the sidebar (NULL = after the ordered ones, by name)
+  `ALTER TABLE projects ADD COLUMN sort_order INTEGER;`,
 ];
