@@ -312,6 +312,8 @@ export interface Methods {
   'term.input': { params: { sessionId: string; data: string }; result: null };
   'term.resize': { params: { sessionId: string; cols: number; rows: number }; result: null };
   'term.kill': { params: { sessionId: string }; result: null };
+  // An ended session's successor: its Claude conversation resumed, else a new shell in its folder.
+  'term.resume': { params: { sessionId: string; cols: number; rows: number }; result: TermSession };
 
   // Agents (Claude Code). Run in a hub-owned PTY like terminals; all term.* apply.
   // harnessId omitted = the project's default (Claude Code unless set). resume: Claude Code only.

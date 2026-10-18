@@ -148,6 +148,44 @@ export function makeDispatch(
     return root ? folderAccount(claude.accountOf(externalId, root, harnesses.accounts())?.harnessId) : undefined;
   };
 
+  // New agent, or resume a conversation (focuses it if it's already running here).
+  const startAgent = (projectId: string, harnessId: string | undefined, resume: string | undefined, cols: number, rows: number) => {
+    if (resume) {
+      const open = terms
+        .list(projectId)
+        .find((s) => s.status === 'running' && s.agent?.externalId === resume);
+      if (open) return open; // already running here: the UI focuses it
+      if (harnessId === 'openai-codex') {
+        const project = getProject(projectId);
+        const codexPane = terms
+          .list(projectId)
+          .find((s) => s.status === 'running' && s.harness === 'openai-codex' && s.cwd === project.root_path);
+        if (codexPane) return codexPane;
+      }
+      // A conversation resumes on the account it lives in, in the folder it
+      // was started in (where Claude keeps it) even if it's filed elsewhere.
+      harnessId ??= resumeAccount(projectId, resume);
+      const startedIn = (db.prepare('SELECT cwd FROM transcript_files WHERE transcript_id = ?').get(resume) as { cwd: string | null } | undefined)?.cwd;
+      if (startedIn && startedIn !== getProject(projectId).root_path) {
+        return harnesses.start(projectId, harnessId, cols, rows, resume, startedIn);
+      }
+    }
+    return harnesses.start(projectId, harnessId, cols, rows, resume);
+  };
+
+  // What an ended pane resumes: an agent's own conversation id, or, for `claude`
+  // run in a plain terminal, the transcript in that folder whose title the pane
+  // last showed (Claude sets the tab title to the conversation's, after a status glyph).
+  const resumeTarget = (s: TermSession): string | null => {
+    if (s.agent?.externalId) return s.agent.externalId;
+    const title = s.title.replace(/^[^\p{L}\p{N}]+/u, '').trim();
+    if (!title || !/^[^\p{L}\p{N}]/u.test(s.title)) return null; // a plain shell's title has no glyph
+    const row = db
+      .prepare('SELECT transcript_id FROM transcript_files WHERE title = ? AND cwd = ? ORDER BY updated_at DESC LIMIT 1')
+      .get(title, s.cwd) as { transcript_id: string } | undefined;
+    return row?.transcript_id ?? null;
+  };
+
   const organizer = new Organizer();
   // Where a conversation's transcript file is (any account), for filed ones.
   const transcriptFile = (id: string): { path: string; harnessId: string } | null => {
@@ -241,30 +279,17 @@ export function makeDispatch(
     'term.input': ({ sessionId, data }) => terms.input(sessionId, data),
     'term.resize': ({ sessionId, cols, rows }) => terms.resize(sessionId, cols, rows),
     'term.kill': ({ sessionId }) => terms.kill(sessionId),
-
-    'agent.start': ({ projectId, harnessId, resume, cols, rows }) => {
-      if (resume) {
-        const open = terms
-          .list(projectId)
-          .find((s) => s.status === 'running' && s.agent?.externalId === resume);
-        if (open) return open; // already running here: the UI focuses it
-        if (harnessId === 'openai-codex') {
-          const project = getProject(projectId);
-          const codexPane = terms
-            .list(projectId)
-            .find((s) => s.status === 'running' && s.harness === 'openai-codex' && s.cwd === project.root_path);
-          if (codexPane) return codexPane;
-        }
-        // A conversation resumes on the account it lives in, in the folder it
-        // was started in (where Claude keeps it) even if it's filed elsewhere.
-        harnessId ??= resumeAccount(projectId, resume);
-        const startedIn = (db.prepare('SELECT cwd FROM transcript_files WHERE transcript_id = ?').get(resume) as { cwd: string | null } | undefined)?.cwd;
-        if (startedIn && startedIn !== getProject(projectId).root_path) {
-          return harnesses.start(projectId, harnessId, cols, rows, resume, startedIn);
-        }
-      }
-      return harnesses.start(projectId, harnessId, cols, rows, resume);
+    // Pick an ended pane back up: its Claude conversation if it had one, else a shell in the same folder.
+    'term.resume': ({ sessionId, cols, rows }) => {
+      const s = terms.info(sessionId);
+      if (s.status === 'running') return s;
+      if (!s.projectId) throw new Error('that session belongs to no project');
+      const resume = resumeTarget(s);
+      if (resume) return startAgent(s.projectId, s.kind === 'agent' ? (s.harness ?? undefined) : undefined, resume, cols, rows);
+      return terms.create(s.projectId, s.cwd, cols, rows);
     },
+
+    'agent.start': ({ projectId, harnessId, resume, cols, rows }) => startAgent(projectId, harnessId, resume, cols, rows),
     'account.add': ({ name, mode }) => harnesses.addAccount(name, mode),
     'account.usage': () => ({ harnessId: harnesses.usageAccount() }),
     'account.setUsage': async ({ harnessId }) => {

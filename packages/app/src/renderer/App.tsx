@@ -61,7 +61,14 @@ export function App() {
   const [info, setInfo] = useState<HubInfo | null>(null);
   const [projects, setProjects] = useState<Project[]>([]);
   const [selected, setSelectedState] = useState<string | null>(loadSelected);
-  const [dock, setDock] = useState<DockviewApi | null>(null);
+  // The dock and the project it belongs to. While switching projects the old
+  // one is still set for a moment; it must never be used for the new project.
+  const [dockFor, setDockFor] = useState<{ api: DockviewApi; projectId: string } | null>(null);
+  const onDockApi = useCallback(
+    (api: DockviewApi | null, projectId: string) =>
+      setDockFor((cur) => (api ? { api, projectId } : cur?.projectId === projectId ? null : cur)),
+    [],
+  );
   const [name, setName] = useState('');
   const [error, setError] = useState<string | null>(null);
   const [searching, setSearching] = useState(false);
@@ -110,6 +117,7 @@ export function App() {
   };
   // While an idea is open, project-specific UI is hidden (but the selection is kept).
   const current = currentIdea ? null : (projects.find((p) => p.id === selected && !p.archived) ?? null);
+  const dock = dockFor && dockFor.projectId === current?.id ? dockFor.api : null;
 
   const refresh = useCallback(async () => {
     try {
@@ -511,7 +519,7 @@ export function App() {
         {currentIdea ? (
           <IdeaView key={currentIdea.id} idea={currentIdea} onPromote={(i) => void promote(i)} onError={setError} />
         ) : current ? (
-          <Workspace key={current.id} project={current} onApi={setDock} />
+          <Workspace key={current.id} project={current} onApi={onDockApi} />
         ) : (
           <div className="placeholder">
             <h1>Workbench</h1>

@@ -162,6 +162,13 @@ body {
 }
 .term-wrap:hover .earlier { opacity: 1; }
 .earlier:hover { color: var(--text); border-color: var(--accent); }
+.resume-pane {
+  font: inherit; font-size: 11px;
+  background: var(--panel); color: var(--accent); border: 1px solid rgba(106, 168, 255, .4); border-radius: 6px;
+  padding: 3px 10px;
+}
+.resume-pane:hover:not(:disabled) { border-color: var(--accent); }
+.resume-pane:disabled { opacity: .6; }
 
 .account-chip {
   font: inherit; font-size: 11px;

@@ -29,8 +29,8 @@ const theme = {
 const dim = (s: string) => `\r\n\x1b[2m[${s}]\x1b[0m\r\n`;
 
 function endNotice(s: TermSession): string | null {
-  if (s.status === 'lost') return dim('session ended — the hub restarted');
-  if (s.status === 'exited') return dim(`process exited${s.exitCode !== null ? ` with code ${s.exitCode}` : ''}`);
+  if (s.status === 'lost') return dim('session ended — the hub restarted · Enter or Resume picks it up');
+  if (s.status === 'exited') return dim(`process exited${s.exitCode !== null ? ` with code ${s.exitCode}` : ''} · Enter or Resume starts it again`);
   return null;
 }
 
@@ -59,6 +59,24 @@ export function TerminalPane({ params, api, containerApi }: IDockviewPanelProps<
       setMoveError((err as Error).message);
     }
   };
+
+  // An ended pane picks up in place: its Claude conversation, else a new shell in its folder.
+  const [resuming, setResuming] = useState(false);
+  const resume = async () => {
+    if (resuming) return;
+    setResuming(true);
+    setMoveError(null);
+    try {
+      const t = termRef.current;
+      const next = await hub.call('term.resume', { sessionId: params.sessionId, cols: t?.cols ?? 100, rows: t?.rows ?? 30 });
+      replaceTerminal(containerApi, params.sessionId, next.id, next.title);
+    } catch (err) {
+      setResuming(false);
+      setMoveError((err as Error).message);
+    }
+  };
+  const resumeRef = useRef(resume);
+  resumeRef.current = resume;
 
   // ⌘⇧V (App) toggles the voice bar on the active pane.
   useEffect(() => {
@@ -161,6 +179,7 @@ export function TerminalPane({ params, api, containerApi }: IDockviewPanelProps<
 
     const input = term.onData((data) => {
       if (status === 'running') hub.notify('term.input', { sessionId, data });
+      else if (live && data === '\r') void resumeRef.current();
     });
     const ro = new ResizeObserver(() => sendSize());
     ro.observe(host.current!);
@@ -214,6 +233,16 @@ export function TerminalPane({ params, api, containerApi }: IDockviewPanelProps<
       >
         Earlier output
       </button>
+      {session && session.status !== 'running' && (
+        <button
+          className="resume-pane"
+          disabled={resuming}
+          title={session.kind === 'agent' || /^[^\p{L}\p{N}]/u.test(session.title) ? 'Resume this conversation here (Enter)' : 'Start a new shell here, in the same folder (Enter)'}
+          onClick={() => void resume()}
+        >
+          {resuming ? 'Resuming…' : 'Resume'}
+        </button>
+      )}
       {session?.status === 'running' && (
         <button
           className={`voice-toggle ${voice ? 'on' : ''}`}
