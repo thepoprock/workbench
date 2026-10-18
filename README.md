@@ -92,14 +92,15 @@ live in `~/Library/Application Support/Workbench/`.
   `claude --remote-control`.
 - History viewer: **Earlier output** (hover a pane) pages through a session's
   full saved output; search hits open it at the matching part.
-- Voice: 🎤 on a pane (or ⌘⇧V) records from the microphone and transcribes
-  locally with whisper.cpp — nothing leaves the Mac. **Type as I speak** puts
-  each sentence into the pane as soon as it has settled (dictating a prompt);
-  off, the whole memo is shown afterwards to review, then **Insert**, or
-  **Insert with files** to also hand the agent the paths of the recording
-  (`…/Workbench/voice/<time>.wav`, 16 kHz mono) and its transcript (`.txt`).
-  Every recording is saved before the final pass, so a failed engine never
-  loses what was said; **Discard** deletes both files. Needs `brew install
+- Voice: 🎤 on a pane (or ⌘⇧V) starts recording at once; press it again to
+  stop, Esc to cancel. Words are typed into the pane as they settle (typed,
+  not pasted, so Claude Code keeps them in the prompt; line breaks become
+  spaces so nothing submits early). Tick **Memo** to review the whole
+  transcript first, then **Insert**, or **Insert with files** to also hand
+  the agent the paths of the recording (`…/Workbench/voice/<time>.wav`,
+  16 kHz mono) and its transcript (`.txt`). Transcription is local
+  (whisper.cpp) — nothing leaves the Mac. Every recording is saved before
+  the final pass; **Discard** and Esc delete it. Needs `brew install
   whisper-cpp` and a ggml model in `~/Library/Application Support/Workbench/models/`
   (the largest `.bin` there is used; `WORKBENCH_WHISPER_MODEL` or the
   `voice.model` setting override it). The hub starts `whisper-server` on the

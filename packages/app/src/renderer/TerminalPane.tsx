@@ -40,6 +40,11 @@ export function TerminalPane({ params, api, containerApi }: IDockviewPanelProps<
   const host = useRef<HTMLDivElement>(null);
   const termRef = useRef<Terminal | null>(null);
   const [voice, setVoice] = useState(false);
+  const [voiceToggle, setVoiceToggle] = useState(0); // each bump starts or stops a recording
+  const pressVoice = useCallback(() => {
+    setVoice(true);
+    setVoiceToggle((n) => n + 1);
+  }, []);
   const session = useSession(params.sessionId);
   const accounts = useAccounts();
   const [moving, setMoving] = useState<string | null>(null);
@@ -81,21 +86,23 @@ export function TerminalPane({ params, api, containerApi }: IDockviewPanelProps<
   // ⌘⇧V (App) toggles the voice bar on the active pane.
   useEffect(() => {
     const toggle = () => {
-      if (api.isActive) setVoice((v) => !v);
+      if (api.isActive) pressVoice();
     };
     window.addEventListener('workbench:voice', toggle);
     return () => window.removeEventListener('workbench:voice', toggle);
-  }, [api]);
+  }, [api, pressVoice]);
 
-  // Text into the pane the way a paste arrives. A program that asked for
-  // bracketed paste (Claude Code) gets newlines intact; a plain shell would run
-  // each line, so there they become spaces.
-  const paste = useCallback((text: string) => {
-    const term = termRef.current;
-    if (!term) return;
-    term.paste(term.modes.bracketedPasteMode ? text : text.replace(/\s*\n+\s*/g, ' '));
-    term.focus();
-  }, []);
+  // Spoken text goes in as typing, not as a paste: Claude Code shows a paste
+  // as a separate "[Pasted text]" block, and a newline would submit the prompt
+  // (or run the line in a shell), so line breaks become spaces.
+  const paste = useCallback(
+    (text: string) => {
+      const data = text.replace(/\s*\n+\s*/g, ' ');
+      if (data.trim()) hub.notify('term.input', { sessionId: params.sessionId, data });
+      termRef.current?.focus();
+    },
+    [params.sessionId],
+  );
 
   useEffect(() => {
     const sessionId = params.sessionId;
@@ -246,15 +253,17 @@ export function TerminalPane({ params, api, containerApi }: IDockviewPanelProps<
       {session?.status === 'running' && (
         <button
           className={`voice-toggle ${voice ? 'on' : ''}`}
-          title="Voice: dictate into this pane, or record a memo and insert it (⌘⇧V)"
-          onClick={() => setVoice((v) => !v)}
+          title="Dictate into this pane: press to start, again to stop (⌘⇧V). Esc cancels."
+          onClick={pressVoice}
           aria-pressed={voice}
         >
           🎤
         </button>
       )}
       </div>
-      {voice && session?.status === 'running' && <VoiceBar paste={paste} onClose={() => setVoice(false)} />}
+      {voice && session?.status === 'running' && (
+        <VoiceBar paste={paste} toggle={voiceToggle} onClose={() => setVoice(false)} />
+      )}
       {moveError && !limited && <div className="limit-banner"><span className="limit-error">{moveError}</span></div>}
       {limited && (
         <div className="limit-banner">

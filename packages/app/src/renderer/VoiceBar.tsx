@@ -1,83 +1,79 @@
 import { useEffect, useRef, useState } from 'react';
-import type { VoiceEngine, VoiceUpdate } from '@workbench/shared';
+import type { VoiceUpdate } from '@workbench/shared';
 import { hub } from './hub.ts';
 import { micError, Recorder } from './voice.ts';
 
 // Per-viewer convenience only; storage may be unavailable.
-const LIVE_KEY = 'workbench.voice.live';
-const loadLive = () => {
+const MEMO_KEY = 'workbench.voice.memo';
+const loadMemo = () => {
   try {
-    return localStorage.getItem(LIVE_KEY) !== 'off';
+    return localStorage.getItem(MEMO_KEY) === 'on';
   } catch {
-    return true;
+    return false;
   }
 };
-const saveLive = (v: boolean) => {
+const saveMemo = (v: boolean) => {
   try {
-    localStorage.setItem(LIVE_KEY, v ? 'on' : 'off');
+    localStorage.setItem(MEMO_KEY, v ? 'on' : 'off');
   } catch {}
 };
 
 const mmss = (s: number) => `${Math.floor(s / 60)}:${String(Math.floor(s % 60)).padStart(2, '0')}`;
+const tail = (s: string, n: number) => (s.length > n ? `…${s.slice(-n)}` : s);
 const basename = (p: string) => p.split('/').pop() ?? p;
 const fileLine = (u: VoiceUpdate) => `[voice memo: ${u.file}${u.transcriptFile ? ` — transcript: ${u.transcriptFile}` : ''}]`;
 
 interface Props {
-  paste: (text: string) => void; // into the pane, as a paste
+  paste: (text: string) => void; // typed into the pane
+  toggle: number; // bumped by the 🎤 button / ⌘⇧V: start, or stop when recording
   onClose: () => void;
 }
 
-// Speak into the pane. "Type as I speak": settled text lands in the pane while
-// you talk (dictation). Otherwise the recording becomes a memo you review and
-// insert afterwards, with or without the saved file paths for the agent to read.
-export function VoiceBar({ paste, onClose }: Props) {
+// One toggle: the first press starts recording at once, the next stops.
+// Dictation (default): settled words are typed into the pane while you speak,
+// and the bar goes away when you stop. Memo mode: nothing is typed until you
+// review the whole transcript and insert it (optionally with the saved files).
+// Esc cancels a recording.
+export function VoiceBar({ paste, toggle, onClose }: Props) {
   const rec = useRef<Recorder | null>(null);
   rec.current ??= new Recorder();
-  const idRef = useRef<string | null>(null); // the recording this bar is showing
-  const typed = useRef(''); // final text already pasted (live mode)
-  const [engine, setEngine] = useState<VoiceEngine | null>(null);
+  const idRef = useRef<string | null>(null);
+  const typed = useRef(''); // text already typed (dictation)
   const [u, setU] = useState<VoiceUpdate | null>(null);
-  const [live, setLiveState] = useState(loadLive);
+  const [memo, setMemoState] = useState(loadMemo);
+  const memoRef = useRef(memo);
+  memoRef.current = memo;
   const [level, setLevel] = useState(0);
   const [error, setError] = useState<string | null>(null);
   const [draft, setDraft] = useState('');
-  const [inserted, setInserted] = useState(false);
+  const busy = useRef(false); // a start or stop is in flight
   const recording = u?.state === 'starting' || u?.state === 'listening';
-  const finishing = u?.state === 'finishing';
-  const finished = u?.state === 'done' || u?.state === 'failed';
 
-  useEffect(() => {
-    hub.call('voice.engine', {}).then(setEngine, (err) => setError((err as Error).message));
-  }, []);
-  useEffect(() => {
-    rec.current!.onLevel = setLevel;
-    const r = rec.current!;
-    return () => r.cancel(); // closed while recording: the recording is dropped
-  }, []);
-
-  // Newly settled text is pasted at once in live mode.
   const typeNew = (text: string) => {
-    const delta = text.slice(typed.current.length);
+    const delta = text.slice(typed.current.length).trim();
     if (!delta) return;
     paste((typed.current ? ' ' : '') + delta);
     typed.current = text;
-    setInserted(true);
   };
+
+  useEffect(() => {
+    const r = rec.current!;
+    r.onLevel = setLevel;
+    return () => r.cancel(); // pane closed mid-recording: drop it
+  }, []);
 
   useEffect(
     () =>
       hub.onPush((p) => {
         if (p.event !== 'voice.update' || p.data.id !== idRef.current) return;
         setU(p.data);
-        if (live && p.data.state !== 'failed') typeNew(p.data.text);
-        if (p.data.state === 'done' || p.data.state === 'failed') setDraft(p.data.text);
+        if (!memoRef.current && p.data.state !== 'failed') typeNew(p.data.text);
       }),
-    [live, paste],
+    [paste],
   );
 
   const start = async () => {
     setError(null);
-    setInserted(false);
     setDraft('');
     typed.current = '';
     try {
@@ -93,8 +89,18 @@ export function VoiceBar({ paste, onClose }: Props) {
     try {
       const r = await rec.current!.stop();
       setU(r);
+      if (r.state === 'failed') {
+        setDraft(r.text);
+        setError(r.error);
+        return;
+      }
+      if (!memoRef.current) {
+        typeNew(r.text);
+        idRef.current = null;
+        onClose(); // dictation done: the words are in the pane
+        return;
+      }
       setDraft(r.text);
-      if (live && r.state !== 'failed') typeNew(r.text);
     } catch (err) {
       setError((err as Error).message);
     }
@@ -103,52 +109,52 @@ export function VoiceBar({ paste, onClose }: Props) {
   const cancel = () => {
     rec.current!.cancel();
     idRef.current = null;
-    setU(null);
+    onClose();
   };
+
+  // The button / shortcut: start, or stop.
+  useEffect(() => {
+    if (busy.current) return;
+    busy.current = true;
+    const run = rec.current!.id ? stop() : start();
+    void run.finally(() => {
+      busy.current = false;
+    });
+  }, [toggle]);
+
+  useEffect(() => {
+    if (!recording) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') {
+        e.preventDefault();
+        e.stopPropagation();
+        cancel();
+      }
+    };
+    window.addEventListener('keydown', onKey, true);
+    return () => window.removeEventListener('keydown', onKey, true);
+  }, [recording]);
 
   const discard = async () => {
     const id = idRef.current;
     idRef.current = null;
-    setU(null);
-    setDraft('');
-    setInserted(false);
-    if (id) await hub.call('voice.discard', { id }).catch((err) => setError((err as Error).message));
+    if (id) await hub.call('voice.discard', { id }).catch(() => {});
+    onClose();
   };
 
-  const status = !engine
-    ? 'checking the speech engine…'
-    : !engine.server
-      ? 'whisper-server is not installed (brew install whisper-cpp)'
-      : !engine.model
-        ? 'no speech model found — see Voice in the README'
-        : !u
-          ? engine.ready
-            ? 'ready'
-            : 'ready (the model loads on the first recording)'
-          : u.state === 'starting'
-            ? 'loading the model…'
-            : u.state === 'listening'
-              ? live
-                ? 'listening — settled text goes into the pane'
-                : 'listening'
-              : u.state === 'finishing'
-                ? 'finishing…'
-                : u.state === 'done'
-                  ? inserted
-                    ? 'inserted'
-                    : 'review, then insert'
-                  : 'recognition failed — the recording was saved';
-  const canRecord = !!engine?.server && !!engine?.model;
+  const review = !!u && !recording && u.state !== 'finishing' && (memo || u.state === 'failed');
 
   return (
     <div className="voice-bar">
       <div className="voice-row">
-        {recording || finishing ? (
-          <button className="voice-rec on" onClick={() => void stop()} disabled={finishing}>
-            {finishing ? 'Finishing…' : '■ Stop'}
+        {recording ? (
+          <button className="voice-rec on" onClick={() => void stop()} title="Stop (⌘⇧V or 🎤)">
+            ■ {u?.state === 'starting' ? 'Loading…' : 'Stop'}
           </button>
+        ) : u?.state === 'finishing' ? (
+          <span className="voice-rec on">Finishing…</span>
         ) : (
-          <button className="voice-rec" onClick={() => void start()} disabled={!canRecord}>
+          <button className="voice-rec" onClick={() => void start()}>
             ● Record
           </button>
         )}
@@ -158,46 +164,40 @@ export function VoiceBar({ paste, onClose }: Props) {
           </span>
         )}
         {u && <span className="voice-time">{mmss(u.seconds)}</span>}
-        <label className="voice-live" title="Settled text is typed into the pane while you speak. Off: review the whole memo first.">
+        <span className="voice-live-text">
+          {recording && memo && (u?.text || u?.partial) ? (
+            <>
+              {tail(u?.text ?? '', u?.partial ? 70 : 140)}
+              {u?.partial && <span className="voice-partial"> {tail(u.partial, 70)}</span>}
+            </>
+          ) : recording && u?.partial ? (
+            <span className="voice-partial">{u.partial}</span>
+          ) : recording ? (
+            <span className="muted">{memo ? 'recording a memo — review before it goes in' : 'speak — words are typed as they settle'}</span>
+          ) : null}
+        </span>
+        <label className="voice-live" title="Off: words are typed into the pane as you speak. On: review the whole memo, then insert it.">
           <input
             type="checkbox"
-            checked={live}
-            disabled={recording || finishing}
+            checked={memo}
+            disabled={recording}
             onChange={(e) => {
-              setLiveState(e.target.checked);
-              saveLive(e.target.checked);
+              setMemoState(e.target.checked);
+              saveMemo(e.target.checked);
             }}
           />
-          Type as I speak
+          Memo
         </label>
-        <span className="voice-status muted">{status}</span>
-        {recording && (
-          <button className="link" onClick={cancel}>
-            Cancel
-          </button>
-        )}
-        <button
-          className="voice-close"
-          onClick={() => {
-            if (recording) cancel();
-            onClose();
-          }}
-          aria-label="Close"
-        >
+        <button className="voice-close" onClick={recording ? cancel : onClose} title={recording ? 'Cancel (Esc)' : 'Close'}>
           ×
         </button>
       </div>
-      {(recording || finishing) && u && (u.text || u.partial) && (
-        <div className="voice-text">
-          <span>{u.text}</span>
-          {u.partial && <span className="voice-partial"> {u.partial}</span>}
-        </div>
-      )}
-      {finished && u && (
+      {review && u && (
         <>
           <textarea
             className="voice-draft"
             value={draft}
+            autoFocus
             onChange={(e) => setDraft(e.target.value)}
             rows={Math.min(8, Math.max(2, Math.ceil(draft.length / 110) + 1))}
             spellCheck
@@ -205,25 +205,26 @@ export function VoiceBar({ paste, onClose }: Props) {
           <div className="voice-actions">
             <button
               className="action primary"
-              disabled={!draft.trim() || (inserted && draft === u.text)}
+              disabled={!draft.trim()}
               onClick={() => {
-                paste(draft);
-                setInserted(true);
+                paste(draft.trim());
+                idRef.current = null;
+                onClose();
               }}
-              title={inserted ? 'Insert the edited text again' : 'Type the transcript into the pane'}
             >
-              {inserted ? 'Insert again' : 'Insert'}
+              Insert
             </button>
             <button
               className="action"
               disabled={!u.file}
               onClick={() => {
-                paste(inserted ? fileLine(u) : `${draft.trim()}\n\n${fileLine(u)}`);
-                setInserted(true);
+                paste(`${draft.trim()} ${fileLine(u)}`);
+                idRef.current = null;
+                onClose();
               }}
               title="Also give the agent the paths of the recording and transcript"
             >
-              {inserted ? 'Insert file paths' : 'Insert with files'}
+              Insert with files
             </button>
             <button className="action" onClick={() => void navigator.clipboard.writeText(draft)}>
               Copy
@@ -239,7 +240,8 @@ export function VoiceBar({ paste, onClose }: Props) {
           </div>
         </>
       )}
-      {(error || u?.error) && <div className="voice-error">{error ?? u?.error}</div>}
+      {error && <div className="voice-error">{error}</div>}
+      {!error && u?.error && recording && <div className="voice-error">{u.error}</div>}
     </div>
   );
 }

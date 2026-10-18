@@ -215,10 +215,9 @@ body {
 .voice-time { color: var(--muted); font-variant-numeric: tabular-nums; }
 .voice-live { display: flex; align-items: center; gap: 5px; color: var(--muted); white-space: nowrap; }
 .voice-live input { margin: 0; }
-.voice-status { margin-left: auto; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .voice-close { background: none; border: 0; color: var(--muted); font-size: 16px; line-height: 1; padding: 0 2px; }
 .voice-close:hover { color: var(--text); }
-.voice-text { max-height: 120px; overflow-y: auto; line-height: 1.5; white-space: pre-wrap; }
+.voice-live-text { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .voice-partial { color: var(--muted); }
 .voice-draft {
   width: 100%; resize: vertical; font: inherit; font-size: 12.5px; line-height: 1.5; padding: 8px 10px; border-radius: 6px;
