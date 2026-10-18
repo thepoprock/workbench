@@ -8,7 +8,8 @@
     "dev": "npm run dev -w @workbench/app",
     "hub": "npm run start -w @workbench/hub",
     "postinstall": "node node_modules/electron/install.js && chmod +x node_modules/node-pty/prebuilds/*/spawn-helper",
-    "typecheck": "tsc -p packages/shared && tsc -p packages/hub && tsc -p packages/app"
+    "typecheck": "tsc -p packages/shared && tsc -p packages/hub && tsc -p packages/app",
+    "dev:copy": "WORKBENCH_DATA_DIR=\"$HOME/Library/Application Support/Workbench-dev\" npm run dev -w @workbench/app -- --remoteDebuggingPort 9334"
   },
   "devDependencies": {
     "typescript": "^5.9.0",

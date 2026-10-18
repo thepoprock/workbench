@@ -4,6 +4,10 @@ import { pathToFileURL } from 'node:url';
 import { app, BrowserWindow, dialog, ipcMain, Menu, Notification, shell, type IpcMainInvokeEvent } from 'electron';
 import { ensureHub } from './hub.ts';
 
+// A second copy (WORKBENCH_DATA_DIR) also needs its own browser profile, or
+// both windows share one localStorage and claude.ai sign-in.
+if (process.env.WORKBENCH_DATA_DIR) app.setPath('userData', process.env.WORKBENCH_DATA_DIR);
+
 const RENDERER_FILE = join(__dirname, '../renderer/index.html');
 
 // The only page allowed to run in our windows and talk to the main process:
