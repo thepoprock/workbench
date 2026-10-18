@@ -29,6 +29,11 @@ const KEEP_DONE_MS = 60 * 60_000; // a finished recording stays addressable (dis
 const EXTRA_PATH = ['/opt/homebrew/bin', '/usr/local/bin'];
 // Bracketed/parenthesised "events", music notes, punctuation-only output.
 const JUNK = /^[\s.,!?\-–—]*$|^\[.*\]$|^\(.*\)$|^♪/;
+// Phrases whisper invents from room noise or silence. Dropped only when the
+// audio under them is quiet or the decode was unsure, so a spoken "okay" stays.
+const PHANTOM = /^(thank you( (so much|very much|for watching))?|thanks( for watching)?|okay|ok|you|bye|so|oh|uh|um|hmm|yeah|right|all right)[.!?]*$/i;
+const PHANTOM_RMS = 0.02; // speech through the mic (with auto gain) sits well above this
+const PHANTOM_PROB = 0.75;
 
 export const voiceDir = join(dataDir, 'voice');
 export const modelsDir = join(dataDir, 'models');
@@ -454,8 +459,17 @@ export class Voice {
       }
       return;
     }
+    const segRms = (sg: Segment) => {
+      const a = Math.max(0, Math.floor(sg.start * RATE)) * BPS;
+      const b = Math.min(window.length, Math.ceil(sg.end * RATE) * BPS);
+      return b > a ? loudness(window.subarray(a, b)).rms : 0;
+    };
     const segs = (await this.engine.transcribe(window, rec.u.text.slice(-200))).filter(
-      (s) => s.text && !JUNK.test(s.text) && s.prob >= MIN_WORD_PROB,
+      (s) =>
+        s.text &&
+        !JUNK.test(s.text) &&
+        s.prob >= MIN_WORD_PROB &&
+        !(PHANTOM.test(s.text) && (segRms(s) < PHANTOM_RMS || s.prob < PHANTOM_PROB)),
     );
     const settled = (s: Segment, i: number) => final || s.end <= dur - SETTLE_S || (dur > LONG_TAIL_S && i < segs.length - 1);
     let n = 0;
