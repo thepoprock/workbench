@@ -28,6 +28,7 @@ interface Props {
   projectId: string | null; // recordings are filed under the pane's project
   sessionId: string;
   toggle: number; // bumped by the 🎤 button / ⌘⇧V: start, or stop when recording
+  registerSubmit: (finish: (() => Promise<void>) | null) => void; // Enter in the pane finishes dictation first
   onClose: () => void;
 }
 
@@ -36,7 +37,7 @@ interface Props {
 // and the bar goes away when you stop. Memo mode: nothing is typed until you
 // review the whole transcript and insert it (optionally with the saved files).
 // Esc cancels a recording.
-export function VoiceBar({ paste, projectId, sessionId, toggle, onClose }: Props) {
+export function VoiceBar({ paste, projectId, sessionId, toggle, registerSubmit, onClose }: Props) {
   const rec = useRef<Recorder | null>(null);
   rec.current ??= new Recorder();
   const idRef = useRef<string | null>(null);
@@ -87,7 +88,14 @@ export function VoiceBar({ paste, projectId, sessionId, toggle, onClose }: Props
     }
   };
 
-  const stop = async () => {
+  const stopping = useRef<Promise<void> | null>(null);
+  const stop = () => {
+    stopping.current ??= doStop().finally(() => {
+      stopping.current = null;
+    });
+    return stopping.current;
+  };
+  const doStop = async () => {
     try {
       const r = await rec.current!.stop();
       setU(r);
@@ -107,6 +115,12 @@ export function VoiceBar({ paste, projectId, sessionId, toggle, onClose }: Props
       setError((err as Error).message);
     }
   };
+
+  // Dictating: Enter in the pane waits for the last words before it is sent.
+  const dictating = !memo && (u?.state === 'starting' || u?.state === 'listening' || u?.state === 'finishing');
+  useEffect(() => {
+    registerSubmit(dictating ? () => (rec.current!.id || stopping.current ? stop() : Promise.resolve()) : null);
+  }, [dictating]);
 
   const cancel = () => {
     rec.current!.cancel();

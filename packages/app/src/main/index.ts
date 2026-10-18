@@ -96,12 +96,15 @@ function createWindow(): void {
     minWidth: 800,
     minHeight: 500,
     titleBarStyle: 'hiddenInset',
+    // WORKBENCH_HIDDEN=1: no window or dock icon (driven over the debug port, e.g. tests of the dev copy).
+    show: !process.env.WORKBENCH_HIDDEN,
     backgroundColor: '#0f1115',
     webPreferences: {
       preload: join(__dirname, '../preload/index.cjs'),
       sandbox: true,
       contextIsolation: true,
-      webviewTag: true, // only for the Remote pane; locked down in will-attach-webview
+      webviewTag: true,
+      backgroundThrottling: !process.env.WORKBENCH_HIDDEN, // hidden test runs must keep timers and audio at full speed // only for the Remote pane; locked down in will-attach-webview
     },
   });
 
@@ -163,6 +166,7 @@ handle('shell:reveal', (_e, path: string) => {
 const ICON = join(__dirname, '../../build/icon.png');
 
 app.whenReady().then(() => {
+  if (process.env.WORKBENCH_HIDDEN) app.dock?.hide();
   if (process.platform === 'darwin' && !app.isPackaged) {
     try {
       app.dock?.setIcon(ICON);

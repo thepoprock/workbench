@@ -39,6 +39,7 @@ function endNotice(s: TermSession): string | null {
 export function TerminalPane({ params, api, containerApi }: IDockviewPanelProps<TerminalParams>) {
   const host = useRef<HTMLDivElement>(null);
   const termRef = useRef<Terminal | null>(null);
+  const voiceSubmit = useRef<(() => Promise<void>) | null>(null); // set while dictating
   const [voice, setVoice] = useState(false);
   const [voiceToggle, setVoiceToggle] = useState(0); // each bump starts or stops a recording
   const pressVoice = useCallback(() => {
@@ -185,6 +186,14 @@ export function TerminalPane({ params, api, containerApi }: IDockviewPanelProps<
     });
 
     const input = term.onData((data) => {
+      // Enter while dictating: finish the recording, let its last words be
+      // typed, then send the Enter, so what you send is everything you said.
+      if (status === 'running' && data === '\r' && voiceSubmit.current) {
+        const finish = voiceSubmit.current;
+        voiceSubmit.current = null;
+        void finish().finally(() => hub.notify('term.input', { sessionId, data }));
+        return;
+      }
       if (status === 'running') hub.notify('term.input', { sessionId, data });
       else if (live && data === '\r') void resumeRef.current();
     });
@@ -267,7 +276,11 @@ export function TerminalPane({ params, api, containerApi }: IDockviewPanelProps<
           projectId={session.projectId}
           sessionId={params.sessionId}
           toggle={voiceToggle}
-          onClose={() => setVoice(false)}
+          registerSubmit={(fn) => (voiceSubmit.current = fn)}
+          onClose={() => {
+            voiceSubmit.current = null;
+            setVoice(false);
+          }}
         />
       )}
       {moveError && !limited && <div className="limit-banner"><span className="limit-error">{moveError}</span></div>}
