@@ -91,6 +91,7 @@
     },
     "deb": {
       "packageName": "workbench"
-    }
+    },
+    "artifactName": "Workbench-${version}-${arch}.${ext}"
   }
 }
