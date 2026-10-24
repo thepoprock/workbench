@@ -88,6 +88,9 @@
       "icon": "build/icon.png",
       "category": "Development",
       "maintainer": "Patrick <thepoprock@users.noreply.github.com>"
+    },
+    "deb": {
+      "packageName": "workbench"
     }
   }
 }
