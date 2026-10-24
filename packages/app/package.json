@@ -3,6 +3,7 @@
   "version": "0.1.0",
   "description": "Workbench: projects, terminals and coding agents in one window",
   "author": "Patrick Roth",
+  "homepage": "https://github.com/thepoprock/workbench",
   "private": true,
   "type": "module",
   "main": "out/main/index.js",
@@ -86,7 +87,7 @@
       ],
       "icon": "build/icon.png",
       "category": "Development",
-      "maintainer": "Patrick"
+      "maintainer": "Patrick <thepoprock@users.noreply.github.com>"
     }
   }
 }
