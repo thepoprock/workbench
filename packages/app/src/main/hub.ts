@@ -1,11 +1,11 @@
 import { spawn } from 'node:child_process';
 import { mkdirSync, openSync, readFileSync } from 'node:fs';
-import { homedir } from 'node:os';
 import { join, resolve } from 'node:path';
 import { app } from 'electron';
-import { APP_DIR_NAME, DISCOVERY_FILE, type HubDiscovery } from '@workbench/shared';
+import { DISCOVERY_FILE, type HubDiscovery } from '@workbench/shared';
 
-const dataDir = process.env.WORKBENCH_DATA_DIR ?? join(homedir(), 'Library', 'Application Support', APP_DIR_NAME);
+// Electron's userData is the same per-OS folder the hub defaults to.
+const dataDir = process.env.WORKBENCH_DATA_DIR ?? app.getPath('userData');
 const discoveryPath = join(dataDir, DISCOVERY_FILE);
 
 function readDiscovery(): HubDiscovery | null {
@@ -31,20 +31,27 @@ function probe(d: HubDiscovery): Promise<boolean> {
 }
 
 // The hub outlives the app: spawned detached, never killed on quit.
-// Dev only for now — runs the TS source with the system node + tsx.
-// Packaging will bundle the hub and run it under ELECTRON_RUN_AS_NODE.
+// Dev: the TS source with the system node + tsx. Packaged: the bundled hub
+// (scripts/bundle-hub.mjs) under Electron's own Node, so nothing else is needed.
 function spawnHub(): void {
-  const hubDir = resolve(app.getAppPath(), '..', 'hub');
   // First run: the data folder doesn't exist until the hub makes it, but the log goes there.
   mkdirSync(dataDir, { recursive: true, mode: 0o700 });
   const log = openSync(join(dataDir, 'hub.log'), 'a');
-  const child = spawn('node', ['--import', 'tsx', join(hubDir, 'src', 'index.ts')], {
-    cwd: hubDir,
-    detached: true,
-    stdio: ['ignore', log, log],
-    env: process.env,
-  });
-  child.unref();
+  const opts = { detached: true, windowsHide: true, stdio: ['ignore', log, log] as ['ignore', number, number] };
+  if (app.isPackaged) {
+    spawn(process.execPath, [join(__dirname, '..', 'hub', 'index.mjs')], {
+      ...opts,
+      env: {
+        ...process.env,
+        ELECTRON_RUN_AS_NODE: '1',
+        WORKBENCH_DATA_DIR: dataDir,
+        WORKBENCH_RUNNER_DIR: join(process.resourcesPath, 'runner'),
+      },
+    }).unref();
+    return;
+  }
+  const hubDir = resolve(app.getAppPath(), '..', 'hub');
+  spawn('node', ['--import', 'tsx', join(hubDir, 'src', 'index.ts')], { ...opts, cwd: hubDir, env: process.env }).unref();
 }
 
 let pending: Promise<HubDiscovery> | null = null;

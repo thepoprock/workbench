@@ -1,5 +1,6 @@
 import { useEffect, useState, type DragEvent } from 'react';
 import type { Project } from '@workbench/shared';
+import { revealLabel } from './platform.ts';
 import { hub } from './hub.ts';
 
 // Recent: last worked in at the top. Manual: the drag-to-sort order. Per viewer.
@@ -77,7 +78,7 @@ export function Projects({ onImport, onOrganize, errorCounts, projects, selected
         : [
             { id: 'rename', label: 'Rename' },
             { id: 'folder', label: p.rootPath ? 'Change Folder…' : 'Set Folder…' },
-            { id: 'reveal', label: 'Show in Finder', enabled: !!p.rootPath },
+            { id: 'reveal', label: revealLabel, enabled: !!p.rootPath },
             { type: 'separator' },
             ...harnesses.map((h) => ({ id: `harness:${h.id}`, label: `${h.id === def ? '✓ ' : '   '}Default agent: ${h.name}` })),
             { type: 'separator' },

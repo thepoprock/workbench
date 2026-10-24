@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState } from 'react';
 import type { IDockviewPanelProps } from 'dockview-react';
 import type { Project, VoiceRecording } from '@workbench/shared';
+import { keys, revealLabel } from './platform.ts';
 import { hub } from './hub.ts';
 
 export interface RecordingsParams {
@@ -74,7 +75,7 @@ export function RecordingsPane({ params }: IDockviewPanelProps<RecordingsParams>
         {error && <div className="error">{error}</div>}
         {items && shown.length === 0 && (
           <div className="placeholder-text">
-            {q ? 'No transcript matches.' : 'No recordings yet. Press 🎤 on a pane (⌘⇧V) to record one.'}
+            {q ? 'No transcript matches.' : `No recordings yet. Press 🎤 on a pane (${keys('⌘⇧V')}) to record one.`}
           </div>
         )}
         {[...groups].map(([g, rs]) => (
@@ -118,7 +119,7 @@ function Recording({
 
   const more = async () => {
     const choice = await window.workbench.menu([
-      { id: 'reveal', label: 'Show in Finder' },
+      { id: 'reveal', label: revealLabel },
       { id: 'copypath', label: 'Copy file paths' },
       { type: 'separator' },
       ...projects

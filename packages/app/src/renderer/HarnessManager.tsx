@@ -6,6 +6,7 @@ const SHARE_LABELS: { group: ShareGroup; label: string; hint: string }[] = [
   { group: 'extensions', label: 'Agents, commands & skills', hint: 'agents, commands, skills, plugins' },
   { group: 'history', label: 'History & memory', hint: 'conversations and per-project memory' },
 ];
+import { secretStore } from './platform.ts';
 import { hub } from './hub.ts';
 
 const TYPE_LABEL: Record<HarnessType, string> = {
@@ -183,7 +184,7 @@ export function HarnessManager({
                       }}
                     />
                     <button className="action primary" onClick={() => void saveToken()}>
-                      Save to Keychain
+                      Save to {secretStore}
                     </button>
                   </span>
                 )}

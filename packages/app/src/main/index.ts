@@ -95,7 +95,11 @@ function createWindow(): void {
     height: 900,
     minWidth: 800,
     minHeight: 500,
-    titleBarStyle: 'hiddenInset',
+    // macOS: traffic lights inset into our title bar. Windows/Linux: our title bar
+    // with the system's window buttons drawn over its right end.
+    ...(process.platform === 'darwin'
+      ? { titleBarStyle: 'hiddenInset' as const }
+      : { titleBarStyle: 'hidden' as const, titleBarOverlay: { color: '#0f1115', symbolColor: '#c9ccd3', height: 38 }, autoHideMenuBar: true }),
     // WORKBENCH_HIDDEN=1: no window or dock icon (driven over the debug port, e.g. tests of the dev copy).
     show: !process.env.WORKBENCH_HIDDEN,
     backgroundColor: '#0f1115',

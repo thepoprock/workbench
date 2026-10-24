@@ -13,6 +13,7 @@ import { bounded } from './Boundary.tsx';
 import { TerminalPane } from './TerminalPane.tsx';
 import { ProjectPane } from './ProjectPane.tsx';
 import { RecordingsPane } from './RecordingsPane.tsx';
+import { keys } from './platform.ts';
 import { JobMailPane } from './JobMailPane.tsx';
 
 const components = {
@@ -54,7 +55,7 @@ function Empty() {
   return (
     <div className="placeholder">
       <p>No open terminals.</p>
-      <p className="muted">⌘T opens one.</p>
+      <p className="muted">{keys('⌘T')} opens one.</p>
     </div>
   );
 }

@@ -114,6 +114,9 @@ body {
 .titlebar-path { margin-left: 6px; }
 .titlebar .muted, .placeholder .muted { color: var(--muted); }
 .drag { -webkit-app-region: drag; }
+/* Windows/Linux: the system's window buttons sit over the title bar's right end. */
+:root:not([data-platform="mac"]) .titlebar { padding-right: 150px; }
+:root:not([data-platform="mac"]) .titlebar-spacer { height: 8px; }
 .drag button, .drag input { -webkit-app-region: no-drag; }
 
 /* dockview, tuned to our tokens */

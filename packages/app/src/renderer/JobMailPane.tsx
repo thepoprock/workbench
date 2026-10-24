@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useState, type FormEvent } from 'react';
 import type { JobMail, JobMailStatus } from '@workbench/shared';
+import { secretStore } from './platform.ts';
 import { hub } from './hub.ts';
 
 const when = (ts: number) => new Date(ts).toLocaleString(undefined, { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' });
@@ -85,7 +86,7 @@ export function JobMailPane() {
             <p>
               Connect Gmail with an <b>app password</b>: turn on 2-Step Verification, then create one at{' '}
               <a href="https://myaccount.google.com/apppasswords">myaccount.google.com/apppasswords</a> and paste it here. It is
-              stored in your Mac's Keychain and used only to read your inbox.
+              stored in your {secretStore} and used only to read your inbox.
             </p>
             <div className="hm-row">
               <span className="hm-label">Gmail</span>

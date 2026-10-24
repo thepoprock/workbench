@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import type { VoiceUpdate } from '@workbench/shared';
 import { hub } from './hub.ts';
+import { basename, keys } from './platform.ts';
 import { micError, Recorder } from './voice.ts';
 
 // Per-viewer convenience only; storage may be unavailable.
@@ -20,7 +21,6 @@ const saveMemo = (v: boolean) => {
 
 const mmss = (s: number) => `${Math.floor(s / 60)}:${String(Math.floor(s % 60)).padStart(2, '0')}`;
 const tail = (s: string, n: number) => (s.length > n ? `…${s.slice(-n)}` : s);
-const basename = (p: string) => p.split('/').pop() ?? p;
 const fileLine = (u: VoiceUpdate) => `[voice memo: ${u.file}${u.transcriptFile ? ` — transcript: ${u.transcriptFile}` : ''}]`;
 
 interface Props {
@@ -164,7 +164,7 @@ export function VoiceBar({ paste, projectId, sessionId, toggle, registerSubmit, 
     <div className="voice-bar">
       <div className="voice-row">
         {recording ? (
-          <button className="voice-rec on" onClick={() => void stop()} title="Stop (⌘⇧V or 🎤)">
+          <button className="voice-rec on" onClick={() => void stop()} title={`Stop (${keys('⌘⇧V')} or 🎤)`}>
             ■ {u?.state === 'starting' ? 'Loading…' : 'Stop'}
           </button>
         ) : u?.state === 'finishing' ? (

@@ -1,12 +1,16 @@
 {
   "name": "@workbench/app",
+  "version": "0.1.0",
+  "description": "Workbench: projects, terminals and coding agents in one window",
+  "author": "Patrick Roth",
   "private": true,
   "type": "module",
   "main": "out/main/index.js",
   "scripts": {
     "dev": "electron-vite dev",
     "build": "electron-vite build",
-    "start": "electron-vite preview"
+    "start": "electron-vite preview",
+    "dist": "electron-builder"
   },
   "dependencies": {
     "@workbench/shared": "*",
@@ -17,15 +21,71 @@
     "dompurify": "^3.4.16",
     "marked": "^18.0.14",
     "react": "^19.1.0",
-    "react-dom": "^19.1.0"
+    "react-dom": "^19.1.0",
+    "node-pty": "^1.1.0"
   },
   "devDependencies": {
     "@types/react": "^19.1.0",
     "@types/react-dom": "^19.1.0",
     "@vitejs/plugin-react": "^5.0.0",
     "electron": "^44.0.0",
+    "electron-builder": "^26.17.0",
     "electron-vite": "^5.0.0",
     "vite": "^7.0.0"
   },
-  "productName": "Workbench"
+  "productName": "Workbench",
+  "build": {
+    "electronVersion": "44.5.1",
+    "appId": "org.realworldsolutions.workbench",
+    "productName": "Workbench",
+    "directories": {
+      "output": "../../dist",
+      "buildResources": "build"
+    },
+    "files": [
+      "out/**",
+      "package.json"
+    ],
+    "asarUnpack": [
+      "node_modules/node-pty/**"
+    ],
+    "extraResources": [
+      {
+        "from": "../runner",
+        "to": "runner",
+        "filter": [
+          "*.mjs",
+          "package.json"
+        ]
+      }
+    ],
+    "npmRebuild": false,
+    "mac": {
+      "target": [
+        "dir"
+      ],
+      "icon": "build/icon.icns"
+    },
+    "win": {
+      "target": [
+        "nsis",
+        "zip"
+      ],
+      "icon": "build/icon.png"
+    },
+    "nsis": {
+      "oneClick": false,
+      "perMachine": false,
+      "allowToChangeInstallationDirectory": true
+    },
+    "linux": {
+      "target": [
+        "AppImage",
+        "deb"
+      ],
+      "icon": "build/icon.png",
+      "category": "Development",
+      "maintainer": "Patrick"
+    }
+  }
 }

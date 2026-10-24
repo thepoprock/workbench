@@ -8,6 +8,7 @@ import serialize from '@xterm/addon-serialize';
 import type { AgentInfo, ScrollbackChunk, SessionKind, TermSession, TermStatus } from '@workbench/shared';
 import type { DB } from './db/index.ts';
 import { scrollbackDir } from './paths.ts';
+import { loginShell } from './platform.ts';
 import type { Client } from './server.ts';
 import { stripAnsi } from './text.ts';
 
@@ -181,14 +182,7 @@ export class Terminals {
     const dir = cwd ?? root ?? homedir();
     if (!existsSync(dir)) throw new Error(`directory does not exist: ${dir}`);
 
-    const shell = process.env.SHELL || '/bin/zsh';
-    const run: SpawnSpec = spec ?? {
-      kind: 'terminal',
-      harness: null,
-      file: shell,
-      args: ['-l'],
-      title: shell.split('/').pop() ?? 'shell',
-    };
+    const run: SpawnSpec = spec ?? { kind: 'terminal', harness: null, ...loginShell() };
     if (run.fixedCols) cols = run.fixedCols;
     const proc = pty.spawn(run.file, run.args, {
       name: 'xterm-256color',

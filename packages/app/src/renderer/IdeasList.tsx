@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import type { Idea } from '@workbench/shared';
 import { hub } from './hub.ts';
+import { revealLabel } from './platform.ts';
 import { putIdea } from './ideas.ts';
 
 interface Props {
@@ -32,7 +33,7 @@ export function IdeasList({ ideas, selected, onSelect, onError }: Props) {
 
   const menu = async (i: Idea) => {
     const choice = await window.workbench.menu([
-      { id: 'reveal', label: 'Show in Finder' },
+      { id: 'reveal', label: revealLabel },
       { type: 'separator' },
       i.archived ? { id: 'unarchive', label: 'Unarchive' } : { id: 'archive', label: 'Archive' },
     ]);

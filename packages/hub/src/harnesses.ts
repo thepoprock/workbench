@@ -6,6 +6,7 @@ import type { AccountMode, Harness, HarnessType, ModelServer, ShareGroup, TermSe
 import { keychainDelete, keychainGet } from './keychain.ts';
 import type { ClaudeAccount, ClaudeHarness } from './claude.ts';
 import { dataDir } from './paths.ts';
+import { shellCommand, viaShell } from './platform.ts';
 import type { DB } from './db/index.ts';
 import type { Terminals } from './terminals.ts';
 import { HARNESS_ID } from './claude.ts';
@@ -14,7 +15,7 @@ import { HARNESS_ID } from './claude.ts';
 // hook env (WORKBENCH_HOOK_URL/TOKEN), so status, changelog and errors work
 // the same for all of them (protocol: packages/runner/events.mjs).
 
-const RUNNER_DIR = join(import.meta.dirname, '..', '..', 'runner');
+const RUNNER_DIR = process.env.WORKBENCH_RUNNER_DIR ?? join(import.meta.dirname, '..', '..', 'runner');
 const MAIN_CLAUDE = join(homedir(), '.claude');
 
 // What each sharing switch links from the main ~/.claude into an account folder.
@@ -283,12 +284,11 @@ export class Harnesses {
     }
     if (resume && h.id !== OPENAI_HARNESS_ID) throw new Error(`${h.name} can't resume conversations`);
 
-    const shell = process.env.SHELL || '/bin/zsh';
     let command: string[];
     if (h.id === OPENAI_HARNESS_ID) command = resume ? ['codex', 'resume', resume] : ['codex'];
     else if (h.type === 'local-model') command = ['node', join(RUNNER_DIR, 'local-agent.mjs')];
     else if (h.type === 'agent-sdk') command = ['node', h.config.script || join(RUNNER_DIR, 'sdk-agent.mjs')];
-    else command = ['/bin/sh', '-c', h.config.command];
+    else command = shellCommand(h.config.command);
 
     const id = randomUUID();
     const hookEnv = this.claude.registerHooks(id);
@@ -302,8 +302,7 @@ export class Harnesses {
           kind: 'agent',
           harness: h.id,
           // Login shell so node and the user's tools are on PATH, as in a terminal.
-          file: shell,
-          args: ['-l', '-c', 'exec "$0" "$@"', ...command],
+          ...viaShell(command),
           env: { ...hookEnv, WB_HARNESS_CONFIG: JSON.stringify(h.config ?? {}) },
           title: h.name,
           agent: { state: 'starting', activity: null, externalId: null },

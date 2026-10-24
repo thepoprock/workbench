@@ -113,6 +113,18 @@ live in `~/Library/Application Support/Workbench/`.
 - Projects can be dragged into the order you want in the sidebar.
 - Throwaway data dir: `WORKBENCH_DATA_DIR=/some/tmp npm run dev`
 
+## Windows and Linux
+
+`npm run dist -- --win` / `--linux` packages installers into `dist/` (the hub is
+bundled and runs on Electron's own Node, so nothing else needs installing; `claude`
+must be on PATH for Claude sessions). GitHub Actions (`.github/workflows/desktop.yml`)
+builds both on every push to `dev`/`main` after a smoke test on that OS — download
+them from the run's artifacts. Differences from macOS: shortcuts are Ctrl+Shift+key
+(new terminal Ctrl+Shift+T), Ctrl+Shift+C / Ctrl+V copy and paste in terminals,
+terminals open PowerShell on Windows (`WORKBENCH_SHELL` overrides), tokens are kept
+with DPAPI (Windows) or secret-tool / a 0600 file (Linux). Data lives in
+`%APPDATA%\Workbench` or `~/.config/Workbench`.
+
 ## Layout
 
 ```

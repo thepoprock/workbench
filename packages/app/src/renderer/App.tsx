@@ -14,6 +14,7 @@ import { Projects } from './Projects.tsx';
 import { openChangelog, openClaudeFiles, openErrors, openHistory, openJobMail, openProject, openRecordings, openRemote, openTerminal, replaceTerminal } from './dock.ts';
 import { Elsewhere } from './Elsewhere.tsx';
 import { Search } from './Search.tsx';
+import { basename, isAppShortcut, isMac, keys } from './platform.ts';
 import { Workspace } from './Workspace.tsx';
 
 function useHubStatus() {
@@ -23,7 +24,6 @@ function useHubStatus() {
   );
 }
 
-const basename = (p: string) => p.replace(/\/+$/, '').split('/').pop() ?? p;
 
 // Per-viewer convenience only; storage may be unavailable.
 const SELECTED_KEY = 'workbench.selectedProject';
@@ -288,7 +288,7 @@ export function App() {
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
-      if (!e.metaKey || e.altKey) return;
+      if (!isAppShortcut(e)) return;
       const k = e.key.toLowerCase();
       if (e.shiftKey && k === 'f') {
         e.preventDefault();
@@ -315,7 +315,7 @@ export function App() {
         window.dispatchEvent(new Event('workbench:voice')); // the active terminal pane answers
         return;
       }
-      if (!e.shiftKey && k === 't') {
+      if (k === 't' && (!isMac || !e.shiftKey)) {
         e.preventDefault();
         void newTerminal();
       } else if (e.shiftKey && k === 'a') {
@@ -449,7 +449,7 @@ export function App() {
 
         <div className="section-label with-action">
           Live terminals
-          <button onClick={() => void newTerminal()} title="New terminal (⌘T)" disabled={!dock || !current}>
+          <button onClick={() => void newTerminal()} title={`New terminal (${keys('⌘T')})`} disabled={!dock || !current}>
             +
           </button>
         </div>
@@ -506,17 +506,17 @@ export function App() {
               onClick={() => dock && openErrors(dock, current.id)}
               disabled={!dock}
             >
-              Errors{errorCounts[current.id] ? ` (${errorCounts[current.id]})` : ''} <kbd>⌘⇧E</kbd>
+              Errors{errorCounts[current.id] ? ` (${errorCounts[current.id]})` : ''} <kbd>{keys('⌘⇧E')}</kbd>
             </button>
           )}
           {current && (
             <button className="search-button" onClick={() => dock && openChangelog(dock, current.id)} disabled={!dock}>
-              Changelog <kbd>⌘⇧L</kbd>
+              Changelog <kbd>{keys('⌘⇧L')}</kbd>
             </button>
           )}
           {current && (
             <button className="search-button" onClick={() => dock && openProject(dock, current.id)} disabled={!dock} title="Info, history and search for this project">
-              Project <kbd>⌘⇧P</kbd>
+              Project <kbd>{keys('⌘⇧P')}</kbd>
             </button>
           )}
           {current && (
@@ -538,7 +538,7 @@ export function App() {
             Credits: {accountLabel(usageHarness)} ▾
           </button>
           <button className="search-button" onClick={() => setSearching(true)} disabled={status !== 'connected'}>
-            Search history <kbd>⌘⇧F</kbd>
+            Search history <kbd>{keys('⌘⇧F')}</kbd>
           </button>
         </div>
         {currentIdea ? (

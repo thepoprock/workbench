@@ -1,0 +1,45 @@
+# Windows and Linux builds of the desktop app. Each OS: typecheck, bundle the
+# hub, smoke-test it there (terminal + recent sort), then package installers.
+name: Desktop builds
+
+on:
+  push:
+    branches: [dev, main]
+  workflow_dispatch:
+
+jobs:
+  build:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: windows-latest
+            target: --win
+            files: |
+              dist/*.exe
+              dist/*.zip
+          - os: ubuntu-latest
+            target: --linux
+            files: |
+              dist/*.AppImage
+              dist/*.deb
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+      - run: npm ci
+      - run: npm run typecheck
+      - run: npm run build -w @workbench/app
+      - run: node scripts/bundle-hub.mjs
+      - name: Smoke test (bundled hub on Electron's Node)
+        run: node scripts/smoke-hub.mjs --start
+      - name: Package
+        run: npm run dist -w @workbench/app -- ${{ matrix.target }} --publish never
+      - uses: actions/upload-artifact@v4
+        with:
+          name: workbench-${{ runner.os }}
+          path: ${{ matrix.files }}
+          if-no-files-found: error

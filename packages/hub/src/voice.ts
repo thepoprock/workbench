@@ -14,6 +14,7 @@ import { delimiter, join } from 'node:path';
 import type { VoiceEngine, VoiceRecording, VoiceUpdate } from '@workbench/shared';
 import type { DB } from './db/index.ts';
 import { dataDir } from './paths.ts';
+import { isWindows } from './platform.ts';
 
 const RATE = 16_000;
 const BPS = 2; // bytes per sample (Int16LE mono)
@@ -26,7 +27,7 @@ const MIN_WORD_PROB = 0.35; // segments whose words average below this are dropp
 const IDLE_STOP_MS = 10 * 60_000;
 const START_TIMEOUT_MS = 90_000;
 const KEEP_DONE_MS = 60 * 60_000; // a finished recording stays addressable (discard) this long
-const EXTRA_PATH = ['/opt/homebrew/bin', '/usr/local/bin'];
+const EXTRA_PATH = isWindows ? [] : ['/opt/homebrew/bin', '/usr/local/bin'];
 // Bracketed/parenthesised "events", music notes, punctuation-only output.
 const JUNK = /^[\s.,!?\-–—]*$|^\[.*\]$|^\(.*\)$|^♪/;
 // Phrases whisper invents from room noise or silence. Dropped only when the
@@ -43,7 +44,7 @@ const log = (msg: string) => console.log(`${new Date().toISOString()} [voice] ${
 function findBinary(name: string): string | null {
   for (const d of [...(process.env.PATH ?? '').split(delimiter), ...EXTRA_PATH]) {
     if (!d) continue;
-    const p = join(d, name);
+    const p = join(d, isWindows ? `${name}.exe` : name);
     try {
       accessSync(p, constants.X_OK);
       return p;

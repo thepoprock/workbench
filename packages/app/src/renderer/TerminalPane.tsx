@@ -10,6 +10,7 @@ import { openHistory, replaceTerminal } from './dock.ts';
 import { useSession } from './sessions.ts';
 import { accountLabel, mainFolder, useAccounts } from './accounts.ts';
 import { VoiceBar } from './VoiceBar.tsx';
+import { isMac, keys } from './platform.ts';
 
 export interface TerminalParams {
   sessionId: string;
@@ -109,7 +110,7 @@ export function TerminalPane({ params, api, containerApi }: IDockviewPanelProps<
     const sessionId = params.sessionId;
     const term = new Terminal({
       scrollback: SCROLLBACK_LINES,
-      fontFamily: '"SF Mono", Menlo, Monaco, monospace',
+      fontFamily: '"SF Mono", Menlo, Monaco, Consolas, "DejaVu Sans Mono", monospace',
       fontSize: 12,
       lineHeight: 1.15,
       cursorBlink: true,
@@ -121,6 +122,22 @@ export function TerminalPane({ params, api, containerApi }: IDockviewPanelProps<
     term.loadAddon(fit);
     term.open(host.current!);
     termRef.current = term;
+    // Windows/Linux have no Edit menu doing this: Ctrl+Shift+C (or Ctrl+C with a
+    // selection) copies, Ctrl+V pastes; a bare Ctrl+C still interrupts.
+    if (!isMac) {
+      term.attachCustomKeyEventHandler((e) => {
+        if (e.type !== 'keydown' || !e.ctrlKey || e.altKey || e.metaKey) return true;
+        const k = e.key.toLowerCase();
+        if (k === 'c' && (e.shiftKey || term.hasSelection())) {
+          document.execCommand('copy');
+          if (!e.shiftKey) term.clearSelection();
+          e.preventDefault();
+          return false;
+        }
+        if (k === 'v' && !e.shiftKey) return false; // the browser pastes into xterm's textarea
+        return true;
+      });
+    }
     try {
       const gl = new WebglAddon();
       gl.onContextLoss(() => gl.dispose());
@@ -262,7 +279,7 @@ export function TerminalPane({ params, api, containerApi }: IDockviewPanelProps<
       {session?.status === 'running' && (
         <button
           className={`voice-toggle ${voice ? 'on' : ''}`}
-          title="Dictate into this pane: press to start, again to stop (⌘⇧V). Esc cancels."
+          title={`Dictate into this pane: press to start, again to stop (${keys('⌘⇧V')}). Esc cancels.`}
           onClick={pressVoice}
           aria-pressed={voice}
         >

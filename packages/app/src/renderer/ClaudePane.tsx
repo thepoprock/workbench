@@ -115,7 +115,7 @@ export function ClaudePane({ params }: IDockviewPanelProps<ClaudeParams>) {
               const href = a?.getAttribute('href');
               if (!href || /^[a-z]+:/i.test(href) || href.startsWith('#')) return;
               e.preventDefault();
-              const dir = open!.path.slice(0, open!.path.lastIndexOf('/'));
+              const dir = open!.path.slice(0, Math.max(open!.path.lastIndexOf('/'), open!.path.lastIndexOf('\\')));
               const target = new URL(decodeURIComponent(href.split('#')[0]), `file://${dir}/`).pathname;
               const f = files.find((x) => x.path === target);
               if (f) setOpen(f);

@@ -1,4 +1,5 @@
-import { execFile, execFileSync } from 'node:child_process';
+import { execFile } from 'node:child_process';
+import { viaShell, which } from './platform.ts';
 import { promisify } from 'node:util';
 import { randomBytes, randomUUID, timingSafeEqual } from 'node:crypto';
 import { createReadStream, existsSync, readdirSync, statSync } from 'node:fs';
@@ -67,16 +68,6 @@ const accountEnv = (configDir?: string, token?: string): Record<string, string> 
   ...(token ? { CLAUDE_CODE_OAUTH_TOKEN: token } : {}),
 });
 
-// Resolve `claude` the way the user's login shell would.
-function findClaude(): string | null {
-  try {
-    const shell = process.env.SHELL || '/bin/zsh';
-    const out = execFileSync(shell, ['-lc', 'command -v claude'], { encoding: 'utf8', timeout: 10_000 }).trim();
-    return out.split('\n').pop() || null;
-  } catch {
-    return null;
-  }
-}
 
 type Hook = Record<string, unknown> & { hook_event_name?: string };
 
@@ -96,7 +87,7 @@ export class ClaudeHarness {
   ) {}
 
   private claude(): string {
-    this.claudePath ??= findClaude();
+    this.claudePath ??= which('claude');
     if (!this.claudePath) throw new Error('claude CLI not found on your login shell PATH');
     return this.claudePath;
   }
@@ -115,7 +106,6 @@ export class ClaudeHarness {
     const id = randomUUID();
     const hookEnv = this.registerHooks(id);
     const externalId = resume ?? randomUUID();
-    const shell = process.env.SHELL || '/bin/zsh';
     const claudeArgs = [resume ? '--resume' : '--session-id', externalId, '--settings', HOOK_SETTINGS];
     if (remoteName) claudeArgs.push('--remote-control', remoteName);
     if (prompt && !resume) claudeArgs.push('--', prompt);
@@ -130,8 +120,7 @@ export class ClaudeHarness {
         {
           kind: 'agent',
           harness: account?.harnessId ?? HARNESS_ID,
-          file: shell,
-          args: ['-l', '-c', 'exec "$0" "$@"', claudePath, ...claudeArgs],
+          ...viaShell([claudePath, ...claudeArgs]),
           env: { ...hookEnv, ...accountEnv(account?.configDir, account?.token) },
           title: 'Claude',
           agent: { state: 'starting', activity: null, externalId, remoteUrl: null },
@@ -163,12 +152,10 @@ export class ClaudeHarness {
 
   // A pane running the interactive login for one account.
   login(account: ClaudeAccount, projectId: string, cols: number, rows: number): TermSession {
-    const shell = process.env.SHELL || '/bin/zsh';
     return this.terms.create(projectId, undefined, cols, rows, {
       kind: 'terminal',
       harness: null,
-      file: shell,
-      args: ['-l', '-c', 'exec "$0" "$@"', this.claude(), 'auth', 'login'],
+      ...viaShell([this.claude(), 'auth', 'login']),
       env: accountEnv(account.configDir),
       title: 'Claude sign-in',
     });
@@ -179,12 +166,10 @@ export class ClaudeHarness {
   // output is never written to disk or indexed. Fixed wide so it isn't wrapped.
   private tokenWatch = new Map<string, { harnessId: string; buf: string; onToken: (t: string) => void }>();
   tokenPane(harnessId: string, projectId: string, cols: number, rows: number, onToken: (t: string) => void): TermSession {
-    const shell = process.env.SHELL || '/bin/zsh';
     const s = this.terms.create(projectId, undefined, cols, rows, {
       kind: 'terminal',
       harness: null,
-      file: shell,
-      args: ['-l', '-c', 'exec "$0" "$@"', this.claude(), 'setup-token'],
+      ...viaShell([this.claude(), 'setup-token']),
       title: 'Claude token setup',
       ephemeral: true,
       fixedCols: 400,
@@ -260,12 +245,10 @@ export class ClaudeHarness {
   // Workbench's hooks, so the pane is a plain terminal.
   attach(id: string, projectId: string, cols: number, rows: number): TermSession {
     if (!BACKGROUND_ID_RE.test(id)) throw new Error('bad session id');
-    const shell = process.env.SHELL || '/bin/zsh';
     return this.terms.create(projectId, undefined, cols, rows, {
       kind: 'terminal',
       harness: null,
-      file: shell,
-      args: ['-l', '-c', 'exec "$0" "$@"', this.claude(), 'attach', id],
+      ...viaShell([this.claude(), 'attach', id]),
       title: `claude attach ${id}`,
     });
   }

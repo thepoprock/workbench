@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import type { ClaudeTranscript, Project, TermSession } from '@workbench/shared';
 import { hub } from './hub.ts';
 import { statusClass } from './sessions.ts';
+import { keys } from './platform.ts';
 import { accountLabel, mainFolder, useAccounts } from './accounts.ts';
 
 const ago = (t: number) => {
@@ -81,7 +82,7 @@ export function Agents({ projects, onClaudeFiles, onRemote, onMove, project, ses
     <>
       <div className="section-label with-action">
         Agents
-        <button onClick={() => void pickHarness()} title="New agent session (⌘⇧A starts the project default)" disabled={!canOpen}>
+        <button onClick={() => void pickHarness()} title={`New agent session (${keys('⌘⇧A')} starts the project default)`} disabled={!canOpen}>
           +
         </button>
       </div>
