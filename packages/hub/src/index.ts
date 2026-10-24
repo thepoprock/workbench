@@ -3,7 +3,7 @@ import { readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { WebSocket } from 'ws';
 import type { HubDiscovery } from '@workbench/shared';
 import { openDb } from './db/index.ts';
-import { makeDispatch, type HubOps } from './methods.ts';
+import { makeDispatch, readProject, type HubOps } from './methods.ts';
 import { dataDir, dbPath, discoveryPath, ensureDirs } from './paths.ts';
 import { startServer, type Server } from './server.ts';
 import { Terminals } from './terminals.ts';
@@ -99,6 +99,11 @@ async function main(): Promise<void> {
     } catch {
       return false;
     }
+  };
+  // The sidebar sorts by recent activity: tell clients when a project's time moves.
+  terms.onActive = (projectId) => {
+    const project = readProject(db, projectId);
+    if (project) server?.broadcast({ event: 'project.update', data: project });
   };
   terms.onEnded = (s, killedByUser) => {
     errors.endStream(`term:${s.id}`);

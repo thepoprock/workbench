@@ -92,6 +92,7 @@ function shellEnv(): Record<string, string> {
 export class Terminals {
   private live = new Map<string, Live>();
   onEnded: (session: TermSession, killedByUser: boolean) => void = () => {};
+  onActive: (projectId: string) => void = () => {}; // a session started or a prompt was sent
   onOutput: (session: TermSession, data: string) => void = () => {};
 
   constructor(
@@ -469,6 +470,7 @@ export class Terminals {
     this.db
       .prepare('INSERT INTO events (ts, project_id, session_id, kind, payload, text) VALUES (?, ?, ?, ?, ?, ?)')
       .run(Date.now(), info.projectId, info.id, kind, JSON.stringify(payload), text ?? null);
+    if (info.projectId && (kind === 'session.start' || kind === 'agent.UserPromptSubmit')) this.onActive(info.projectId);
   }
 }
 

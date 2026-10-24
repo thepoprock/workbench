@@ -32,7 +32,12 @@ interface ProjectRow {
   default_harness_id: string | null;
   created_at: number;
   archived: number;
+  last_active?: number | null;
 }
+
+// When the user last worked in a project: a session started or a prompt sent.
+const LAST_ACTIVE = `(SELECT MAX(ts) FROM events e WHERE e.project_id = projects.id
+  AND e.kind IN ('session.start', 'agent.UserPromptSubmit')) AS last_active`;
 
 function checkDir(path: string): void {
   if (!existsSync(path) || !statSync(path).isDirectory()) throw new Error(`not a directory: ${path}`);
@@ -44,8 +49,14 @@ const toProject = (r: ProjectRow): Project => ({
   rootPath: r.root_path,
   defaultHarnessId: r.default_harness_id,
   createdAt: r.created_at,
+  lastActiveAt: r.last_active ?? r.created_at,
   archived: r.archived === 1,
 });
+
+export function readProject(db: DB, id: string): Project | null {
+  const row = db.prepare(`SELECT *, ${LAST_ACTIVE} FROM projects WHERE id = ?`).get(id) as ProjectRow | undefined;
+  return row ? toProject(row) : null;
+}
 
 // Operations the hub itself needs (limit failover), filled in by makeDispatch.
 export interface HubOps {
@@ -101,7 +112,7 @@ export function makeDispatch(
   exportsOut.failoverMode = failoverMode;
 
   const getProject = (id: string): ProjectRow => {
-    const row = db.prepare('SELECT * FROM projects WHERE id = ?').get(id) as ProjectRow | undefined;
+    const row = db.prepare(`SELECT *, ${LAST_ACTIVE} FROM projects WHERE id = ?`).get(id) as ProjectRow | undefined;
     if (!row) throw new Error('unknown project');
     return row;
   };
@@ -209,7 +220,7 @@ export function makeDispatch(
     'project.list': ({ includeArchived }) =>
       (
         db
-          .prepare(`SELECT * FROM projects ${includeArchived ? '' : 'WHERE archived = 0'} ORDER BY sort_order IS NULL, sort_order, name COLLATE NOCASE`)
+          .prepare(`SELECT *, ${LAST_ACTIVE} FROM projects ${includeArchived ? '' : 'WHERE archived = 0'} ORDER BY sort_order IS NULL, sort_order, name COLLATE NOCASE`)
           .all() as unknown as ProjectRow[]
       ).map(toProject),
 

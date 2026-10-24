@@ -2,6 +2,22 @@ import { useEffect, useState, type DragEvent } from 'react';
 import type { Project } from '@workbench/shared';
 import { hub } from './hub.ts';
 
+// Recent: last worked in at the top. Manual: the drag-to-sort order. Per viewer.
+type SortMode = 'recent' | 'manual';
+const SORT_KEY = 'workbench.projectSort';
+const loadSort = (): SortMode => {
+  try {
+    return localStorage.getItem(SORT_KEY) === 'manual' ? 'manual' : 'recent';
+  } catch {
+    return 'recent';
+  }
+};
+const saveSort = (mode: SortMode) => {
+  try {
+    localStorage.setItem(SORT_KEY, mode);
+  } catch {}
+};
+
 interface Props {
   onImport: () => void; // add every folder Claude has been used in
   onOrganize: () => void; // file conversations under the project they worked in
@@ -17,13 +33,20 @@ export function Projects({ onImport, onOrganize, errorCounts, projects, selected
   const [editing, setEditing] = useState<string | null>(null);
   const [draft, setDraft] = useState('');
   const [showArchived, setShowArchived] = useState(false);
+  const [sort, setSort] = useState<SortMode>(loadSort);
   // Drag to sort: the order shown while the hub is told, and the item in flight.
   const [order, setOrder] = useState<string[] | null>(null);
   const [drag, setDrag] = useState<{ id: string; over: string | null; after: boolean } | null>(null);
   useEffect(() => setOrder(null), [projects]); // the hub's order arrived
 
   const stored = projects.filter((p) => !p.archived);
-  const active = order ? order.map((id) => stored.find((p) => p.id === id)).filter((p): p is Project => !!p) : stored;
+  const active =
+    sort === 'recent'
+      ? [...stored].sort((a, b) => b.lastActiveAt - a.lastActiveAt)
+      : order
+        ? order.map((id) => stored.find((p) => p.id === id)).filter((p): p is Project => !!p)
+        : stored;
+  const draggable = sort === 'manual';
   const archived = projects.filter((p) => p.archived);
 
   const run = async (fn: () => Promise<unknown>) => {
@@ -112,8 +135,8 @@ export function Projects({ onImport, onOrganize, errorCounts, projects, selected
     <li
       key={p.id}
       className={[drag?.id === p.id ? 'dragging' : '', drag?.over === p.id ? (drag.after ? 'drop-after' : 'drop-before') : ''].join(' ')}
-      onDragOver={(e) => !p.archived && dragOver(p, e)}
-      onDrop={(e) => !p.archived && drop(p, e)}
+      onDragOver={(e) => draggable && !p.archived && dragOver(p, e)}
+      onDrop={(e) => draggable && !p.archived && drop(p, e)}
     >
       {editing === p.id ? (
         <input
@@ -131,7 +154,7 @@ export function Projects({ onImport, onOrganize, errorCounts, projects, selected
       ) : (
         <button
           className={[p.id === selected ? 'active' : '', p.archived ? 'ended' : ''].join(' ')}
-          draggable={!p.archived}
+          draggable={draggable && !p.archived}
           onDragStart={(e) => {
             e.dataTransfer.setData('text/plain', p.id);
             e.dataTransfer.effectAllowed = 'move';
@@ -155,6 +178,20 @@ export function Projects({ onImport, onOrganize, errorCounts, projects, selected
 
   return (
     <>
+      <div className="section-label with-action">
+        Projects
+        <button
+          className="sort-toggle"
+          onClick={() => {
+            const next = sort === 'recent' ? 'manual' : 'recent';
+            setSort(next);
+            saveSort(next);
+          }}
+          title={sort === 'recent' ? 'Most recently worked in at the top — click to use your drag order' : 'Your drag order — click to sort by most recent'}
+        >
+          {sort === 'recent' ? 'Recent' : 'Manual'}
+        </button>
+      </div>
       <ul className="list">
         {active.map(item)}
         {active.length === 0 && <li className="empty">No projects yet</li>}

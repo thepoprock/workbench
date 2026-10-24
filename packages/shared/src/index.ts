@@ -35,6 +35,7 @@ export interface Project {
   rootPath: string | null;
   defaultHarnessId: string | null; // what ⌘⇧A starts; null = Claude Code
   createdAt: number;
+  lastActiveAt: number; // last session start or prompt; createdAt if none
   archived: boolean;
 }
 

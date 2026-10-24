@@ -382,7 +382,6 @@ export function App() {
         <div className="titlebar-spacer" />
         <IdeasList ideas={ideas} selected={ideaSel} onSelect={setIdeaSel} onError={setError} />
 
-        <div className="section-label spaced">Projects</div>
         <Projects
           onOrganize={() => setOrganizing(true)}
           onImport={async () => {
