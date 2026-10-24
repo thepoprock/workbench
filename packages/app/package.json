@@ -79,6 +79,7 @@
       "allowToChangeInstallationDirectory": true
     },
     "linux": {
+      "executableName": "workbench",
       "target": [
         "AppImage",
         "deb"
