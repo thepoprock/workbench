@@ -7,7 +7,8 @@ import { reply, type Client, type Dispatch } from './server.ts';
 import { keychainGet, keychainSet } from './keychain.ts';
 import { claudeProjectFolders, listClaudeFiles, readClaudeFile, writeClaudeFile } from './claudecfg.ts';
 import { Organizer, projectName } from './organize.ts';
-import { projectsRoot } from './claude.ts';
+import { accountEnv, HARNESS_ID, projectsRoot } from './claude.ts';
+import { listMcp, logoutMcp, mcpHealth, removeMcp, saveMcp, setMcpApproval, setMcpEnabled, type McpContext } from './mcp.ts';
 import { homedir } from 'node:os';
 import { projectInfo } from './projectinfo.ts';
 import { basename, dirname } from 'node:path';
@@ -110,6 +111,16 @@ export function makeDispatch(
   };
   exportsOut.moveAgent = moveAgent;
   exportsOut.failoverMode = failoverMode;
+
+  // Where MCP commands run: the project's folder (home when none) under one Claude account.
+  const mcpContext = async ({ projectId, harnessId }: { projectId?: string; harnessId?: string }) => {
+    const root = projectId ? getProject(projectId).root_path : null;
+    if (projectId && !root) throw new Error('this project has no folder');
+    const a = harnesses.account(harnessId ?? HARNESS_ID);
+    const token = a.tokenMode ? ((await keychainGet(a.harnessId)) ?? undefined) : undefined;
+    const ctx: McpContext = { claude: claude.cliPath(), cwd: root ?? homedir(), configDir: a.configDir, env: accountEnv(a.configDir, token) };
+    return { ctx, hasProject: !!root, account: { harnessId: a.harnessId, configDir: a.configDir, token } };
+  };
 
   const getProject = (id: string): ProjectRow => {
     const row = db.prepare(`SELECT *, ${LAST_ACTIVE} FROM projects WHERE id = ?`).get(id) as ProjectRow | undefined;
@@ -348,6 +359,37 @@ export function makeDispatch(
     'harness.save': ({ harness }) => harnesses.save(harness),
     'harness.delete': ({ id }) => harnesses.delete(id),
     'harness.detect': () => harnesses.detect(),
+    'mcp.list': async (p) => {
+      const { ctx, hasProject } = await mcpContext(p);
+      return listMcp(ctx, hasProject);
+    },
+    'mcp.health': async (p) => mcpHealth((await mcpContext(p)).ctx),
+    'mcp.save': async ({ name, scope, config, was, ...p }) => {
+      const { ctx, hasProject } = await mcpContext(p);
+      if (!hasProject && (scope !== 'user' || (was && was.scope !== 'user'))) throw new Error('open a project to use its folder');
+      await saveMcp(ctx, { name, scope, config }, was);
+      return null;
+    },
+    'mcp.remove': async ({ name, scope, ...p }) => {
+      await removeMcp((await mcpContext(p)).ctx, name, scope);
+      return null;
+    },
+    'mcp.setEnabled': async ({ name, enabled, ...p }) => {
+      setMcpEnabled((await mcpContext(p)).ctx, name, enabled);
+      return null;
+    },
+    'mcp.setApproval': async ({ name, approved, ...p }) => {
+      setMcpApproval((await mcpContext(p)).ctx, name, approved);
+      return null;
+    },
+    'mcp.login': async ({ name, cols, rows, ...p }) => {
+      const { ctx, account } = await mcpContext(p);
+      return claude.mcpLogin(account, name, p.projectId, ctx.cwd, cols, rows);
+    },
+    'mcp.logout': async ({ name, ...p }) => {
+      await logoutMcp((await mcpContext(p)).ctx, name);
+      return null;
+    },
     'agent.move': ({ sessionId, harnessId }) => moveAgent(sessionId, harnessId),
     'account.failover': ({ mode }) => {
       if (mode) {

@@ -63,7 +63,7 @@ const LIMIT_RE =
 export const projectsRoot = (configDir?: string) => join(configDir ?? join(homedir(), '.claude'), 'projects');
 export const transcriptDir = (cwd: string, configDir?: string) =>
   join(projectsRoot(configDir), cwd.replace(/[^a-zA-Z0-9]/g, '-'));
-const accountEnv = (configDir?: string, token?: string): Record<string, string> => ({
+export const accountEnv = (configDir?: string, token?: string): Record<string, string> => ({
   ...(configDir ? { CLAUDE_CONFIG_DIR: configDir } : {}),
   ...(token ? { CLAUDE_CODE_OAUTH_TOKEN: token } : {}),
 });
@@ -148,6 +148,22 @@ export class ClaudeHarness {
     }
     const d = JSON.parse(stdout) as { loggedIn?: boolean; email?: string; authMethod?: string };
     return { loggedIn: !!d.loggedIn, email: d.email ?? null, authMethod: d.authMethod ?? null };
+  }
+
+  // The CLI's path, for callers that run their own `claude …` commands.
+  cliPath(): string {
+    return this.claude();
+  }
+
+  // A pane running `claude mcp login <name>` in the project folder (OAuth opens the browser).
+  mcpLogin(account: ClaudeAccount, name: string, projectId: string, cwd: string, cols: number, rows: number): TermSession {
+    return this.terms.create(projectId, cwd, cols, rows, {
+      kind: 'terminal',
+      harness: null,
+      ...viaShell([this.claude(), 'mcp', 'login', name]),
+      env: accountEnv(account.configDir, account.token),
+      title: `Sign in · ${name}`,
+    });
   }
 
   // A pane running the interactive login for one account.

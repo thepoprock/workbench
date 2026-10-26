@@ -494,6 +494,19 @@ kbd { font: inherit; font-size: 11px; color: var(--muted); }
 }
 .hm-row select { flex: 0 0 auto; }
 .hm-servers .link { display: block; text-align: left; }
+.hm-row textarea {
+  flex: 1; min-width: 0; font-size: 12px; padding: 5px 8px; border-radius: 6px; resize: vertical;
+  border: 1px solid var(--border); background: var(--bg); color: var(--text);
+}
+.mcp-section { padding-top: 8px; }
+.mcp-section-head { display: flex; align-items: baseline; gap: 8px; padding: 0 16px; font-size: 13px; }
+.mcp-section-head a { margin-left: auto; text-decoration: none; }
+.mcp-empty { padding: 4px 16px 0; margin: 0; }
+.mcp-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.mcp-state { font-weight: 400; font-size: 11px; color: var(--muted); margin-left: 6px; }
+.mcp-state.connected { color: var(--good, #4caf7a); }
+.mcp-state.failed { color: var(--bad); }
+.mcp-state.needs-auth, .mcp-state.pending { color: #d9a441; }
 
 /* remote control */
 .remote-pane { display: flex; flex-direction: column; width: 100%; height: 100%; background: var(--bg); }

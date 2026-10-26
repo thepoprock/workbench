@@ -219,6 +219,29 @@ export interface AccountStatus {
   tokenHint?: string | null; // token accounts: last characters of the saved token
 }
 
+// MCP servers Claude Code loads (see packages/hub/src/mcp.ts for where each lives).
+//   user: every project · local: just you, this folder · project: the folder's .mcp.json
+//   other: claude.ai connectors and plugin servers (managed elsewhere; can only be switched off here)
+export type McpScope = 'user' | 'local' | 'project' | 'other';
+export interface McpServer {
+  name: string;
+  scope: McpScope;
+  transport: string; // stdio | http | sse
+  target: string; // URL, or command + args
+  config: Record<string, unknown>;
+  enabled: boolean; // not switched off for this folder
+  approval?: 'approved' | 'pending' | 'rejected'; // project (.mcp.json) servers
+}
+export interface McpHealth {
+  name: string;
+  target: string;
+  state: 'connected' | 'needs-auth' | 'failed' | 'pending' | 'disabled' | 'unknown';
+  detail: string;
+}
+// projectId: whose folder (local/project scopes, switches); none = user scope only.
+// harnessId: which Claude account's config (default: the main one).
+type McpWhere = { projectId?: string; harnessId?: string };
+
 export interface ModelServer {
   name: string;
   baseUrl: string;
@@ -379,6 +402,19 @@ export interface Methods {
   'harness.delete': { params: { id: string }; result: null };
   // Probes localhost for Ollama / LM Studio / llama.cpp servers and their models.
   'harness.detect': { params: Empty; result: ModelServer[] };
+  'mcp.list': { params: McpWhere; result: McpServer[] };
+  'mcp.health': { params: McpWhere; result: McpHealth[] };
+  // was: the entry being edited (replaced); omit to add.
+  'mcp.save': {
+    params: McpWhere & { name: string; scope: McpScope; config: Record<string, unknown>; was?: { name: string; scope: McpScope } };
+    result: null;
+  };
+  'mcp.remove': { params: McpWhere & { name: string; scope: McpScope }; result: null };
+  'mcp.setEnabled': { params: McpWhere & { projectId: string; name: string; enabled: boolean }; result: null };
+  'mcp.setApproval': { params: McpWhere & { projectId: string; name: string; approved: boolean }; result: null };
+  // Opens a pane running `claude mcp login <name>` (OAuth in the browser).
+  'mcp.login': { params: McpWhere & { projectId: string; name: string; cols: number; rows: number }; result: TermSession };
+  'mcp.logout': { params: McpWhere & { name: string }; result: null };
   'agent.history': { params: { projectId: string }; result: ClaudeTranscript[] };
   // Continue a running Claude conversation on another main-folder account
   // (stops this process, resumes the conversation there). Returns the new pane's session.

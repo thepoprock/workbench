@@ -7,6 +7,7 @@ import { loadIdeas, useIdeas } from './ideas.ts';
 import { accountLabel, loadAccounts, useAccounts } from './accounts.ts';
 import { Agents } from './Agents.tsx';
 import { HarnessManager } from './HarnessManager.tsx';
+import { McpManager } from './McpManager.tsx';
 import { Organize } from './Organize.tsx';
 import { putSessions, statusClass, useProjectSessions, useRunningSessions } from './sessions.ts';
 import { hub } from './hub.ts';
@@ -73,6 +74,7 @@ export function App() {
   const [error, setError] = useState<string | null>(null);
   const [searching, setSearching] = useState(false);
   const [managingHarnesses, setManagingHarnesses] = useState(false);
+  const [managingMcp, setManagingMcp] = useState(false);
   const [organizing, setOrganizing] = useState(false);
   const [errorCounts, setErrorCounts] = useState<Record<string, number>>({});
   const [jobUnseen, setJobUnseen] = useState(0);
@@ -493,6 +495,9 @@ export function App() {
         <button className="footer-link" onClick={() => setManagingHarnesses(true)} disabled={status !== 'connected'}>
           Harnesses…
         </button>
+        <button className="footer-link" onClick={() => setManagingMcp(true)} disabled={status !== 'connected'}>
+          MCP servers…
+        </button>
         <HubBadge status={status} info={info} />
       </aside>
 
@@ -582,6 +587,23 @@ export function App() {
                 putSessions([s]);
                 openTerminal(dock, s.id, s.title);
                 setManagingHarnesses(false);
+              },
+              (err) => setError((err as Error).message),
+            );
+          }}
+        />
+      )}
+      {managingMcp && (
+        <McpManager
+          project={current}
+          onClose={() => setManagingMcp(false)}
+          onLogin={(name, harnessId) => {
+            if (!current || !dock) return setError('Open a project first — the sign-in runs in one of its panes.');
+            void hub.call('mcp.login', { name, harnessId, projectId: current.id, cols: 100, rows: 30 }).then(
+              (s) => {
+                putSessions([s]);
+                openTerminal(dock, s.id, s.title);
+                setManagingMcp(false);
               },
               (err) => setError((err as Error).message),
             );
