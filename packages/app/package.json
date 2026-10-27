@@ -65,7 +65,22 @@
       "target": [
         "dir"
       ],
-      "icon": "build/icon.icns"
+      "icon": "build/icon.icns",
+      "extendInfo": {
+        "NSMicrophoneUsageDescription": "Workbench uses the microphone for voice dictation: press dictate and what you say is typed into the active pane.",
+        "NSDesktopFolderUsageDescription": "Workbench runs your Claude Code sessions and terminals. They open and edit project files kept on your Desktop.",
+        "NSDocumentsFolderUsageDescription": "Workbench runs your Claude Code sessions and terminals. They open and edit project files kept in Documents.",
+        "NSDownloadsFolderUsageDescription": "Workbench's Claude sessions and terminals read files in Downloads (photos, PDFs, installers) when you ask them to.",
+        "NSRemovableVolumesUsageDescription": "Workbench's Claude sessions and terminals read or write a USB drive or SD card when you ask them to.",
+        "NSNetworkVolumesUsageDescription": "Workbench's Claude sessions and terminals read or write a network share when you ask them to.",
+        "NSPhotoLibraryUsageDescription": "Workbench's Claude sessions look at pictures in your Photos library when you ask them to.",
+        "NSAppleEventsUsageDescription": "Workbench's Claude sessions script other apps when you ask them to.",
+        "NSLocalNetworkUsageDescription": "Workbench's terminals and Claude sessions connect to machines on your local network when you ask them to.",
+        "NSCameraUsageDescription": "Workbench has no use for the camera. Something it started asked anyway — choose Don't Allow unless you know why.",
+        "NSAudioCaptureUsageDescription": "Workbench has no use for recording your Mac's audio. Something it started asked anyway — choose Don't Allow unless you know why.",
+        "NSBluetoothAlwaysUsageDescription": "Workbench has no use for Bluetooth. Something it started asked anyway — choose Don't Allow unless you know why.",
+        "NSBluetoothPeripheralUsageDescription": "Workbench has no use for Bluetooth. Something it started asked anyway — choose Don't Allow unless you know why."
+      }
     },
     "win": {
       "target": [
