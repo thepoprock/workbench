@@ -142,14 +142,19 @@ export class Terminals {
   }
 
   // Index chunks closed before this table existed (or before a crash).
+  // One pass over each table, matched in memory: a correlated NOT EXISTS against
+  // the FTS table scans the whole virtual table per chunk (session_id and seq are
+  // UNINDEXED), which is quadratic — at 18k chunks it held the hub's start for hours.
   private backfillIndex(): void {
-    const missing = this.db
-      .prepare(
-        `SELECT c.session_id, c.seq, c.byte_start, c.byte_end FROM scrollback_chunks c
-         WHERE NOT EXISTS (SELECT 1 FROM scrollback_fts f WHERE f.session_id = c.session_id AND f.seq = c.seq)`,
-      )
+    const indexed = new Set<string>();
+    for (const r of this.db.prepare('SELECT session_id, seq FROM scrollback_fts').all() as { session_id: string; seq: number }[]) {
+      indexed.add(`${r.session_id}:${r.seq}`);
+    }
+    const chunks = this.db
+      .prepare('SELECT session_id, seq, byte_start, byte_end FROM scrollback_chunks')
       .all() as { session_id: string; seq: number; byte_start: number; byte_end: number }[];
-    for (const c of missing) {
+    for (const c of chunks) {
+      if (indexed.has(`${c.session_id}:${c.seq}`)) continue;
       if (!existsSync(logPath(c.session_id))) continue;
       this.indexChunk(c.session_id, c.seq, readRange(logPath(c.session_id), c.byte_start, c.byte_end));
     }
