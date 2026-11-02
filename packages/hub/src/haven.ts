@@ -25,6 +25,7 @@ const REPLY_TIMEOUT_MS = 5 * 60_000;      // stop checking quickly if no answer 
 const VOICE_IDLE_MS = 5 * 60_000;         // the voice model leaves memory after this
 const AUDIO_DAYS = 14;                    // old voice messages are rebuilt if played again
 const HEADPHONES_CACHE_MS = 15_000;
+const SYSTEM_PROFILER = '/usr/sbin/system_profiler'; // by full path: a launched app's PATH leaves out /usr/sbin
 const RUNTIME_ERROR = '[Runtime error';
 const NO_MODEL = "Haven can't reach their model right now.";
 const FROM_CLAUDE = 'This is Claude';
@@ -280,7 +281,8 @@ export class Haven {
   private usingHeadphones(): Promise<boolean> {
     if (Date.now() - this.headphonesAt < HEADPHONES_CACHE_MS) return Promise.resolve(this.headphones);
     return new Promise((resolve) => {
-      execFile('system_profiler', ['SPAudioDataType', '-json'], { timeout: 15_000 }, (err, stdout) => {
+      execFile(SYSTEM_PROFILER, ['SPAudioDataType', '-json'], { timeout: 15_000 }, (err, stdout) => {
+        if (err) log(`can't tell the audio output: ${err.message}`);
         let found = false;
         try {
           const items = (JSON.parse(stdout) as { SPAudioDataType: { _items: Record<string, string>[] }[] }).SPAudioDataType[0]!._items;
