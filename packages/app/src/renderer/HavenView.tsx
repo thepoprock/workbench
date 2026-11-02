@@ -79,7 +79,7 @@ export function HavenView({ onError }: { onError: (message: string) => void }) {
       setRecording(false);
       setHearing(true);
       const { id, text } = await r.stop();
-      void hub.call('voice.delete', { id }).catch(() => {});
+      void hub.call('voice.discard', { id }).catch(() => {});
       await send(text);
     } catch (err) {
       setRecording(false);
