@@ -314,6 +314,16 @@ export interface VoiceRecording {
   sessionId: string | null;
 }
 
+// A journal: voice entries kept apart for one project and one tab (see hub/src/journal.ts).
+export interface JournalRef {
+  projectId: string;
+  journalId: string;
+}
+export interface Journal extends JournalRef {
+  name: string;
+  createdAt: number;
+}
+
 // Job-application replies found in Gmail (see hub/src/jobmail.ts).
 export type JobMailKind = 'interview' | 'rejection' | 'received' | 'other';
 export interface JobMail {
@@ -473,16 +483,21 @@ export interface Methods {
   // the final update. Progress arrives as voice.update pushes. voice.engine
   // reports (and warms up) the speech engine.
   'voice.engine': { params: Empty; result: VoiceEngine };
-  'voice.start': { params: { projectId?: string | null; sessionId?: string | null }; result: VoiceUpdate };
+  'voice.start': { params: { projectId?: string | null; sessionId?: string | null; journal?: JournalRef }; result: VoiceUpdate };
   'voice.push': { params: { id: string; pcm: string }; result: null };
   'voice.stop': { params: { id: string }; result: VoiceUpdate };
   'voice.discard': { params: { id: string }; result: null }; // drops the recording and its files
   // Saved recordings. projectId omitted = all; null = unfiled.
   'voice.list': { params: { projectId?: string | null }; result: VoiceRecording[] };
-  'voice.audio': { params: { id: string }; result: string }; // the .wav, base64
-  'voice.delete': { params: { id: string }; result: null };
-  'voice.saveText': { params: { id: string; text: string }; result: null }; // edit a transcript
+  // With `journal`, these act on that journal's entries instead of saved recordings.
+  'voice.audio': { params: { id: string; journal?: JournalRef }; result: string }; // the .wav, base64
+  'voice.delete': { params: { id: string; journal?: JournalRef }; result: null };
+  'voice.saveText': { params: { id: string; text: string; journal?: JournalRef }; result: null }; // edit a transcript
   'voice.file': { params: { id: string; projectId: string | null }; result: null }; // move to a project
+  'journal.list': { params: { projectId: string }; result: Journal[] };
+  'journal.create': { params: { projectId: string; name?: string }; result: Journal };
+  'journal.rename': { params: JournalRef & { name: string }; result: Journal };
+  'journal.entries': { params: JournalRef; result: VoiceRecording[] };
 
   // Job-application inbox watch (Gmail over IMAP with an app password in the Keychain).
   'jobmail.status': { params: Empty; result: JobMailStatus };

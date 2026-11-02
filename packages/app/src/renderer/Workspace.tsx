@@ -13,6 +13,7 @@ import { bounded } from './Boundary.tsx';
 import { TerminalPane } from './TerminalPane.tsx';
 import { ProjectPane } from './ProjectPane.tsx';
 import { RecordingsPane } from './RecordingsPane.tsx';
+import { JournalPane } from './JournalPane.tsx';
 import { keys } from './platform.ts';
 import { JobMailPane } from './JobMailPane.tsx';
 
@@ -25,6 +26,7 @@ const components = {
   claude: bounded('Claude files', ClaudePane),
   project: bounded('Project', ProjectPane),
   recordings: bounded('Recordings', RecordingsPane),
+  journal: bounded('Journal', JournalPane),
   jobmail: bounded('Job inbox', JobMailPane),
 };
 const tabComponents = { terminal: Tab, history: HistoryTab, plain: HistoryTab };

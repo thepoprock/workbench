@@ -248,6 +248,8 @@ body {
 .rec-audio { height: 28px; max-width: 320px; }
 .rec-text { margin-top: 6px; line-height: 1.55; white-space: pre-wrap; }
 .rec-edit { margin-top: 6px; display: flex; flex-direction: column; gap: 6px; align-items: flex-start; }
+.journal-name { flex: 0 1 180px; min-width: 80px; font-weight: 600; }
+.journal-live { padding: 8px 12px; border-bottom: 1px solid var(--border); line-height: 1.55; max-height: 30%; overflow: auto; flex-shrink: 0; }
 
 /* job inbox */
 .jm-setup { max-width: 640px; display: flex; flex-direction: column; gap: 8px; padding: 12px 0; }

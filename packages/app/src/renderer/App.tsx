@@ -12,7 +12,7 @@ import { Organize } from './Organize.tsx';
 import { putSessions, statusClass, useProjectSessions, useRunningSessions } from './sessions.ts';
 import { hub } from './hub.ts';
 import { Projects } from './Projects.tsx';
-import { openChangelog, openClaudeFiles, openErrors, openHistory, openJobMail, openProject, openRecordings, openRemote, openTerminal, replaceTerminal } from './dock.ts';
+import { openChangelog, openClaudeFiles, openErrors, openHistory, openJobMail, openJournal, openProject, openRecordings, openRemote, openTerminal, replaceTerminal } from './dock.ts';
 import { Elsewhere } from './Elsewhere.tsx';
 import { Search } from './Search.tsx';
 import { basename, isAppShortcut, isMac, keys } from './platform.ts';
@@ -116,6 +116,17 @@ export function App() {
   const usageHarness = accounts.harnesses.find((h) => h.id === accounts.usage);
   // Accounts that can bill new sessions: the main login and token accounts.
   const billable = accounts.harnesses.filter((h) => h.type === 'claude-code' && !h.config.configDir);
+
+  // One journal opens straight away; a project with several asks which.
+  const pickJournal = async () => {
+    if (!dock || !current) return;
+    const journals = await hub.call('journal.list', { projectId: current.id });
+    if (journals.length === 0) return openJournal(dock, await hub.call('journal.create', { projectId: current.id }));
+    if (journals.length === 1) return openJournal(dock, journals[0]);
+    const choice = await window.workbench.menu(journals.map((j) => ({ id: j.journalId, label: j.name })));
+    const j = journals.find((x) => x.journalId === choice);
+    if (j) openJournal(dock, j);
+  };
 
   const pickUsage = async () => {
     if (billable.length < 2) return setManagingHarnesses(true);
@@ -527,6 +538,11 @@ export function App() {
           {current && (
             <button className="search-button" onClick={() => dock && openRecordings(dock, current.id)} disabled={!dock} title="Voice recordings and their transcripts">
               Recordings
+            </button>
+          )}
+          {current && (
+            <button className="search-button" onClick={() => void pickJournal()} disabled={!dock} title="This project's voice journal: audio and transcripts, kept apart from everything else">
+              Journal
             </button>
           )}
           {current && (

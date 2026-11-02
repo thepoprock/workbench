@@ -11,8 +11,9 @@ import { randomUUID } from 'node:crypto';
 import { accessSync, constants, existsSync, mkdirSync, readdirSync, readFileSync, rmSync, statSync, writeFileSync } from 'node:fs';
 import { createServer, type AddressInfo } from 'node:net';
 import { delimiter, join } from 'node:path';
-import type { VoiceEngine, VoiceRecording, VoiceUpdate } from '@workbench/shared';
+import type { JournalRef, VoiceEngine, VoiceRecording, VoiceUpdate } from '@workbench/shared';
 import type { DB } from './db/index.ts';
+import { journalDir } from './journal.ts';
 import { dataDir } from './paths.ts';
 import { isWindows } from './platform.ts';
 
@@ -293,6 +294,7 @@ interface Rec {
   u: VoiceUpdate;
   projectId: string | null; // where it was recorded (for the Recordings pane)
   sessionId: string | null;
+  journal: JournalRef | null; // a journal entry, saved in that journal's folder
   startedAt: number;
   chunks: Buffer[];
   bytes: number;
@@ -321,10 +323,11 @@ export class Voice {
     return this.engine.status();
   }
 
-  start(projectId: string | null = null, sessionId: string | null = null): VoiceUpdate {
+  start(projectId: string | null = null, sessionId: string | null = null, journal: JournalRef | null = null): VoiceUpdate {
+    if (journal) journalDir(journal); // refuse a bad journal before any audio arrives
     const id = randomUUID();
     const u: VoiceUpdate = { id, state: 'starting', text: '', partial: '', seconds: 0, error: null, file: null, transcriptFile: null };
-    const rec: Rec = { u, projectId, sessionId, startedAt: Date.now(), chunks: [], bytes: 0, committed: 0, passedTo: 0, lastSeg: '', busy: null, finishing: null, timer: null };
+    const rec: Rec = { u, projectId, sessionId, journal, startedAt: Date.now(), chunks: [], bytes: 0, committed: 0, passedTo: 0, lastSeg: '', busy: null, finishing: null, timer: null };
     this.recs.set(id, rec);
     this.engine.ensure().then(
       () => {
@@ -394,9 +397,10 @@ export class Voice {
   }
 
   private save(rec: Rec): void {
-    mkdirSync(voiceDir, { recursive: true, mode: 0o700 });
+    const dir = rec.journal ? journalDir(rec.journal) : voiceDir;
+    mkdirSync(dir, { recursive: true, mode: 0o700 });
     const stamp = new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19);
-    const base = join(voiceDir, `${stamp}-${rec.u.id.slice(0, 8)}`);
+    const base = join(dir, `${stamp}-${rec.u.id.slice(0, 8)}`);
     writeFileSync(`${base}.wav`, wav(Buffer.concat(rec.chunks)));
     writeFileSync(`${base}.txt`, `${rec.u.text}\n`);
     writeFileSync(`${base}.json`, JSON.stringify({ projectId: rec.projectId, sessionId: rec.sessionId, startedAt: rec.startedAt }));
@@ -509,9 +513,9 @@ export class Voice {
 // ---- saved recordings (the Recordings pane) ----
 
 const NAME = /^[\w.-]+$/;
-const pathOf = (id: string) => {
+const pathOf = (id: string, journal?: JournalRef) => {
   if (!NAME.test(id)) throw new Error('bad recording id');
-  return join(voiceDir, id);
+  return join(journal ? journalDir(journal) : voiceDir, id);
 };
 function removeRecording(base: string): void {
   for (const ext of ['.wav', '.txt', '.json']) rmSync(`${base}${ext}`, { force: true });
@@ -520,16 +524,22 @@ function removeRecording(base: string): void {
 // Every saved recording, newest first. Recordings made before project tags
 // existed (no .json) come back with projectId null.
 export function listRecordings(projectId?: string | null): VoiceRecording[] {
+  return readRecordings(voiceDir).filter((r) => projectId === undefined || r.projectId === projectId);
+}
+
+export const listJournalEntries = (journal: JournalRef) => readRecordings(journalDir(journal));
+
+function readRecordings(dir: string): VoiceRecording[] {
   let names: string[];
   try {
-    names = readdirSync(voiceDir).filter((f) => f.endsWith('.wav'));
+    names = readdirSync(dir).filter((f) => f.endsWith('.wav'));
   } catch {
     return [];
   }
   const out: VoiceRecording[] = [];
   for (const f of names) {
     const id = f.slice(0, -4);
-    const base = join(voiceDir, id);
+    const base = join(dir, id);
     let meta: { projectId?: string | null; sessionId?: string | null; startedAt?: number } = {};
     try {
       meta = JSON.parse(readFileSync(`${base}.json`, 'utf8'));
@@ -550,18 +560,16 @@ export function listRecordings(projectId?: string | null): VoiceRecording[] {
       sessionId: meta.sessionId ?? null,
     });
   }
-  return out
-    .filter((r) => projectId === undefined || r.projectId === projectId)
-    .sort((a, b) => b.createdAt - a.createdAt);
+  return out.sort((a, b) => b.createdAt - a.createdAt);
 }
 
-export const readRecordingAudio = (id: string) => readFileSync(`${pathOf(id)}.wav`).toString('base64');
-export function deleteRecording(id: string): void {
-  removeRecording(pathOf(id));
+export const readRecordingAudio = (id: string, journal?: JournalRef) => readFileSync(`${pathOf(id, journal)}.wav`).toString('base64');
+export function deleteRecording(id: string, journal?: JournalRef): void {
+  removeRecording(pathOf(id, journal));
 }
-export function saveRecordingText(id: string, text: string): void {
-  if (!existsSync(`${pathOf(id)}.wav`)) throw new Error('unknown recording');
-  writeFileSync(`${pathOf(id)}.txt`, `${text.trim()}\n`);
+export function saveRecordingText(id: string, text: string, journal?: JournalRef): void {
+  if (!existsSync(`${pathOf(id, journal)}.wav`)) throw new Error('unknown recording');
+  writeFileSync(`${pathOf(id, journal)}.txt`, `${text.trim()}\n`);
 }
 export function fileRecording(id: string, projectId: string | null): void {
   const p = `${pathOf(id)}.json`;

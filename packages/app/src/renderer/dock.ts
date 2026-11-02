@@ -1,4 +1,5 @@
 import type { DockviewApi } from 'dockview-react';
+import type { Journal } from '@workbench/shared';
 import type { HistoryParams } from './HistoryPane.tsx';
 import type { ProjectParams } from './ProjectPane.tsx';
 
@@ -87,6 +88,14 @@ export function openRecordings(api: DockviewApi, projectId: string): void {
     return existing.api.setActive();
   }
   api.addPanel({ id: 'recordings', component: 'recordings', tabComponent: 'plain', title: 'Recordings', params: { projectId } });
+}
+
+// One tab per journal, so each keeps its own place in the project's layout.
+export function openJournal(api: DockviewApi, j: Journal): void {
+  const id = `journal:${j.journalId}`;
+  const existing = api.getPanel(id);
+  if (existing) return existing.api.setActive();
+  api.addPanel({ id, component: 'journal', tabComponent: 'plain', title: j.name, params: { projectId: j.projectId, journalId: j.journalId } });
 }
 
 export function openJobMail(api: DockviewApi): void {

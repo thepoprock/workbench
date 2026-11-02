@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState } from 'react';
 import type { IDockviewPanelProps } from 'dockview-react';
-import type { Project, VoiceRecording } from '@workbench/shared';
+import type { JournalRef, Project, VoiceRecording } from '@workbench/shared';
 import { keys, revealLabel } from './platform.ts';
 import { hub } from './hub.ts';
 
@@ -11,7 +11,7 @@ export interface RecordingsParams {
 const mmss = (s: number) => `${Math.floor(s / 60)}:${String(Math.round(s % 60)).padStart(2, '0')}`;
 const when = (ts: number) =>
   new Date(ts).toLocaleString(undefined, { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' });
-const day = (ts: number) => new Date(ts).toLocaleDateString(undefined, { weekday: 'long', month: 'long', day: 'numeric' });
+export const day = (ts: number) => new Date(ts).toLocaleDateString(undefined, { weekday: 'long', month: 'long', day: 'numeric' });
 
 // Every voice recording with its transcript: this project's, or all of them
 // grouped by project. Play, copy, edit the transcript, file under another
@@ -91,14 +91,17 @@ export function RecordingsPane({ params }: IDockviewPanelProps<RecordingsParams>
   );
 }
 
-function Recording({
+// A journal entry passes `journal`: it stays in that journal, so it can't be moved.
+export function Recording({
   r,
   projects,
+  journal,
   onChanged,
   onError,
 }: {
   r: VoiceRecording;
   projects: Project[];
+  journal?: JournalRef;
   onChanged: () => void;
   onError: (m: string) => void;
 }) {
@@ -109,7 +112,7 @@ function Recording({
 
   const play = async () => {
     try {
-      const b64 = await hub.call('voice.audio', { id: r.id });
+      const b64 = await hub.call('voice.audio', { id: r.id, journal });
       const bytes = Uint8Array.from(atob(b64), (c) => c.charCodeAt(0));
       setSrc(URL.createObjectURL(new Blob([bytes], { type: 'audio/wav' })));
     } catch (err) {
@@ -122,10 +125,12 @@ function Recording({
       { id: 'reveal', label: revealLabel },
       { id: 'copypath', label: 'Copy file paths' },
       { type: 'separator' },
-      ...projects
-        .filter((p) => !p.archived && p.id !== r.projectId)
-        .map((p) => ({ id: `file:${p.id}`, label: `Move to ${p.name}` })),
-      { type: 'separator' },
+      ...(journal
+        ? []
+        : [
+            ...projects.filter((p) => !p.archived && p.id !== r.projectId).map((p) => ({ id: `file:${p.id}`, label: `Move to ${p.name}` })),
+            { type: 'separator' as const },
+          ]),
       { id: 'delete', label: 'Delete recording…' },
     ]);
     try {
@@ -140,7 +145,7 @@ function Recording({
           { id: 'no', label: 'Keep it' },
         ]);
         if (sure === 'yes') {
-          await hub.call('voice.delete', { id: r.id });
+          await hub.call('voice.delete', { id: r.id, journal });
           onChanged();
         }
       }
@@ -178,7 +183,7 @@ function Recording({
           <button
             className="action primary"
             onClick={() =>
-              void hub.call('voice.saveText', { id: r.id, text: draft }).then(
+              void hub.call('voice.saveText', { id: r.id, text: draft, journal }).then(
                 () => {
                   setEditing(false);
                   onChanged();
