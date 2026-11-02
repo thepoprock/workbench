@@ -249,6 +249,16 @@ export function HarnessManager({
                 />
               </div>
             ))}
+            {draft.type === 'custom' && (
+              <label className="hm-row">
+                <input
+                  type="checkbox"
+                  checked={draft.config.reconnect === 'on'}
+                  onChange={(e) => setDraft({ ...draft, config: { ...draft.config, reconnect: e.target.checked ? 'on' : '' } })}
+                />
+                <span>Reopen open panes by itself after Workbench restarts</span>
+              </label>
+            )}
             <div className="hm-row">
               <button className="action primary" onClick={() => void save()}>
                 Save

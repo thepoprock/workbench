@@ -211,6 +211,17 @@ export function makeDispatch(
     return row?.transcript_id ?? null;
   };
 
+  // A harness with no conversation to resume starts afresh. Every client showing the
+  // pane may ask at once (desktop and phone), and all of them get the one new session.
+  const restarts = new Map<string, Promise<TermSession>>();
+  const restartHarness = async (ended: TermSession, cols: number, rows: number) => {
+    const earlier = await restarts.get(ended.id)?.catch(() => null);
+    if (earlier && terms.info(earlier.id).status === 'running') return earlier;
+    const next = harnesses.start(ended.projectId!, ended.harness!, cols, rows);
+    restarts.set(ended.id, next);
+    return next;
+  };
+
   const organizer = new Organizer();
   // Where a conversation's transcript file is (any account), for filed ones.
   const transcriptFile = (id: string): { path: string; harnessId: string } | null => {
@@ -304,11 +315,13 @@ export function makeDispatch(
     'term.input': ({ sessionId, data }) => terms.input(sessionId, data),
     'term.resize': ({ sessionId, cols, rows }) => terms.resize(sessionId, cols, rows),
     'term.kill': ({ sessionId }) => terms.kill(sessionId),
-    // Pick an ended pane back up: its Claude conversation if it had one, else a shell in the same folder.
+    // Pick an ended pane back up: its Claude conversation if it had one, its harness
+    // if it ran one with no conversation to resume, else a shell in the same folder.
     'term.resume': ({ sessionId, cols, rows }) => {
       const s = terms.info(sessionId);
       if (s.status === 'running') return s;
       if (!s.projectId) throw new Error('that session belongs to no project');
+      if (s.kind === 'agent' && s.harness && !s.agent?.externalId) return restartHarness(s, cols, rows);
       const resume = resumeTarget(s);
       if (resume) return startAgent(s.projectId, s.kind === 'agent' ? (s.harness ?? undefined) : undefined, resume, cols, rows);
       return terms.create(s.projectId, s.cwd, cols, rows);

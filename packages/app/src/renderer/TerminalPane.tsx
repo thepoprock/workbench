@@ -85,6 +85,13 @@ export function TerminalPane({ params, api, containerApi }: IDockviewPanelProps<
   const resumeRef = useRef(resume);
   resumeRef.current = resume;
 
+  // Harnesses set to reconnect come back by themselves after the hub restarts. Only
+  // 'lost', never 'exited': a pane someone closed or that quit on its own stays closed.
+  const reconnect = session?.status === 'lost' && current?.config.reconnect === 'on';
+  useEffect(() => {
+    if (reconnect) void resumeRef.current();
+  }, [reconnect]);
+
   // ⌘⇧V (App) toggles the voice bar on the active pane.
   useEffect(() => {
     const toggle = () => {
