@@ -2,6 +2,8 @@ import { useCallback, useEffect, useState, useSyncExternalStore, type FormEvent 
 import type { DockviewApi } from 'dockview-react';
 import type { HubInfo, Idea, Project, SearchHit, TermSession } from '@workbench/shared';
 import { IdeasList } from './IdeasList.tsx';
+import { HavenView } from './HavenView.tsx';
+import { setShown, startHaven, useHaven } from './haven.ts';
 import { IdeaView } from './IdeaView.tsx';
 import { loadIdeas, useIdeas } from './ideas.ts';
 import { accountLabel, loadAccounts, useAccounts } from './accounts.ts';
@@ -111,6 +113,14 @@ export function App() {
     [setIdeaSel],
   );
 
+  const haven = useHaven();
+  const [havenOpen, setHavenOpen] = useState(false);
+  const showHaven = (open: boolean) => {
+    setHavenOpen(open);
+    setShown(open);
+    document.documentElement.classList.toggle('haven-open', open);
+  };
+  useEffect(() => startHaven(), []);
   const currentIdea = ideas.find((i) => i.id === ideaSel) ?? null;
   const accounts = useAccounts();
   const usageHarness = accounts.harnesses.find((h) => h.id === accounts.usage);
@@ -393,7 +403,20 @@ export function App() {
     <div className="shell">
       <aside className="sidebar">
         <div className="titlebar-spacer" />
-        <IdeasList ideas={ideas} selected={ideaSel} onSelect={setIdeaSel} onError={setError} />
+        <button className={`haven-entry ${havenOpen ? 'selected' : ''}`} onClick={() => showHaven(true)}>
+          <span className={`dot ${haven.online ? (haven.busy ? 'agent-working' : 'agent-idle') : 'ended'}`} />
+          Haven
+          {haven.unread && <span className="unread" />}
+        </button>
+        <IdeasList
+          ideas={ideas}
+          selected={ideaSel}
+          onSelect={(id) => {
+            showHaven(false);
+            setIdeaSel(id);
+          }}
+          onError={setError}
+        />
 
         <Projects
           onOrganize={() => setOrganizing(true)}
@@ -409,7 +432,10 @@ export function App() {
           errorCounts={errorCounts}
           projects={projects}
           selected={currentIdea ? null : selected}
-          onSelect={setSelected}
+          onSelect={(id) => {
+            showHaven(false);
+            setSelected(id);
+          }}
           onChanged={refresh}
           onError={setError}
         />
@@ -572,6 +598,7 @@ export function App() {
             <p>Create or select a project.</p>
           </div>
         )}
+        {havenOpen && <HavenView onError={setError} />}
       </main>
       {organizing && (
         <Organize

@@ -1,7 +1,7 @@
 import { randomBytes } from 'node:crypto';
 import { readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { WebSocket } from 'ws';
-import type { HubDiscovery } from '@workbench/shared';
+import type { HubDiscovery, Push } from '@workbench/shared';
 import { openDb } from './db/index.ts';
 import { makeDispatch, readProject, type HubOps } from './methods.ts';
 import { dataDir, dbPath, discoveryPath, ensureDirs } from './paths.ts';
@@ -14,6 +14,7 @@ import { Changelog } from './changelog.ts';
 import { Errors } from './errors.ts';
 import { Harnesses } from './harnesses.ts';
 import { Voice } from './voice.ts';
+import { Haven } from './haven.ts';
 import { JobMailWatch } from './jobmail.ts';
 
 const VERSION = '0.0.1';
@@ -122,10 +123,11 @@ async function main(): Promise<void> {
   const harnesses = new Harnesses(db, terms, claude);
   harnessesRef = harnesses;
   const voice = new Voice(db, (u) => server?.broadcast({ event: 'voice.update', data: u }));
+  const haven = new Haven((event, data) => server?.broadcast({ event, data } as Push));
   const jobmail = new JobMailWatch(db, (mail, alert) => server?.broadcast({ event: 'jobmail.update', data: { mail, alert } }));
   const hubOps: HubOps = {};
   const dispatch = makeDispatch(
-    db, terms, claude, history, ideas, changelog, errors, harnesses, voice, jobmail,
+    db, terms, claude, history, ideas, changelog, errors, harnesses, voice, haven, jobmail,
     (harnessId) => server?.broadcast({ event: 'account.update', data: { harnessId } }),
     (project) => server?.broadcast({ event: 'project.update', data: project }),
     {
@@ -173,6 +175,7 @@ async function main(): Promise<void> {
   const discovery: HubDiscovery = { port: server.port, token, pid: process.pid };
   writeFileSync(discoveryPath, JSON.stringify(discovery), { mode: 0o600 });
   log(`listening on 127.0.0.1:${server.port} (pid ${process.pid}, data ${dataDir})`);
+  haven.start();
 
   // Index Claude transcripts in the background; searches top it up later.
   const t0 = Date.now();
@@ -185,6 +188,7 @@ async function main(): Promise<void> {
     log(`${signal}: shutting down`);
     terms.shutdown();
     voice.shutdown();
+    haven.shutdown();
     jobmail.shutdown();
     ideas.shutdown();
     errors.shutdown();

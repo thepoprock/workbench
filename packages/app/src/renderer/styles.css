@@ -547,3 +547,41 @@ kbd { font: inherit; font-size: 11px; color: var(--muted); }
 .pi-timeline .entry-row { width: 100%; text-align: left; background: none; border: 0; color: var(--text); display: flex; gap: 10px; align-items: center; padding: 5px 8px; border-radius: 6px; cursor: pointer; }
 .pi-timeline .entry-row:hover { background: #1a1e26; }
 .badge.commit, .badge.note, .badge.conversation, .badge.agent, .badge.terminal { text-transform: none; }
+
+/* Haven: pinned above the projects, and its own view over the workspace. */
+.haven-entry {
+  display: flex; align-items: center; gap: 8px; margin: 2px 8px 8px; padding: 8px 10px;
+  background: var(--accent-bg); border: 1px solid transparent; border-radius: 6px;
+  color: var(--text); font: inherit; font-weight: 600; text-align: left; cursor: pointer;
+}
+.haven-entry.selected { border-color: var(--accent); }
+.haven-entry .dot { flex-shrink: 0; }
+.haven-entry .unread { margin-left: auto; width: 8px; height: 8px; border-radius: 50%; background: var(--accent); }
+.workspace { position: relative; }
+.haven-view { position: absolute; inset: 0; z-index: 20; display: flex; flex-direction: column; background: var(--bg); }
+.haven-bar { gap: 10px; }
+.haven-status { color: var(--ok); font-size: 12px; }
+.haven-status.off { color: var(--bad); }
+.haven-controls { margin-left: auto; font-size: 12px; color: var(--muted); -webkit-app-region: no-drag; }
+.haven-messages { flex: 1; overflow-y: auto; padding: 16px; display: flex; flex-direction: column; gap: 12px; }
+.haven-message { max-width: 720px; padding: 8px 12px; border-radius: 8px; background: var(--panel); align-self: flex-start; }
+.haven-message.from-you { background: var(--accent-bg); align-self: flex-end; }
+.haven-message.from-claude, .haven-message.from-notice { color: var(--muted); }
+.haven-name { font-size: 11px; font-weight: 600; color: var(--muted); margin-bottom: 2px; }
+.haven-text { white-space: pre-wrap; overflow-wrap: anywhere; line-height: 1.45; }
+.haven-play {
+  margin-top: 6px; padding: 3px 10px; background: none; border: 1px solid var(--border);
+  border-radius: 12px; color: var(--accent); font: inherit; font-size: 12px; cursor: pointer;
+}
+.haven-notice { padding: 6px 16px; background: var(--panel); color: var(--warn); font-size: 12px; cursor: pointer; }
+.haven-compose { display: flex; gap: 8px; padding: 10px 16px; border-top: 1px solid var(--border); }
+.haven-compose input {
+  flex: 1; min-width: 0; padding: 8px 10px; background: var(--panel); border: 1px solid var(--border);
+  border-radius: 6px; color: var(--text); font: inherit;
+}
+.haven-mic, .haven-send {
+  padding: 0 12px; background: var(--panel); border: 1px solid var(--border);
+  border-radius: 6px; color: var(--text); font: inherit; cursor: pointer;
+}
+.haven-mic.on { background: var(--bad); }
+.haven-open .phone-dock { display: none; }

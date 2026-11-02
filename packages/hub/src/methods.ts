@@ -1,3 +1,4 @@
+import type { Haven } from './haven.ts';
 import { randomUUID } from 'node:crypto';
 import { existsSync, statSync } from 'node:fs';
 import type { HubInfo, Method, Methods, Project, Request, TermSession } from '@workbench/shared';
@@ -76,6 +77,7 @@ export function makeDispatch(
   errors: Errors,
   harnesses: Harnesses,
   voice: Voice,
+  haven: Haven,
   jobmail: JobMailWatch,
   onAccountUpdate: (harnessId: string) => void,
   onProjectUpdate: (project: Project) => void,
@@ -523,6 +525,21 @@ export function makeDispatch(
     'jobmail.check': async () => ({ added: await jobmail.check() }),
     'jobmail.seen': ({ id }) => {
       jobmail.markSeen(id);
+      return null;
+    },
+    'haven.state': () => haven.state(),
+    'haven.send': async ({ text }) => {
+      await haven.send(text);
+      return null;
+    },
+    'haven.speak': ({ t }) => haven.speak(t),
+    'haven.audio': ({ t, part }) => haven.audio(t, part),
+    'haven.listen': ({ on }) => {
+      haven.setListening(on);
+      return null;
+    },
+    'haven.playing': ({ playing }) => {
+      haven.setPlaying(playing);
       return null;
     },
     'voice.engine': () => voice.engineStatus(),

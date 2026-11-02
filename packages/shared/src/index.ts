@@ -94,6 +94,13 @@ export interface Pushes {
   'errors.update': { error: ErrorGroup; alert: boolean };
   // A recording's transcript grew, finished or failed (see VoiceUpdate).
   'voice.update': VoiceUpdate;
+  // Haven's chat (see hub/src/haven.ts): status changed, a message came, a voice
+  // message grew, a spoken command for the player, or something to tell the user.
+  'haven.update': Omit<HavenState, 'messages'>;
+  'haven.message': HavenMessage;
+  'haven.audio': HavenAudio;
+  'haven.control': { action: 'stop' | 'repeat' };
+  'haven.notice': { text: string };
   // A reply to a job application arrived (alert = notify; false during the first sweep).
   'jobmail.update': { mail: JobMail; alert: boolean };
 }
@@ -314,6 +321,32 @@ export interface VoiceRecording {
   sessionId: string | null;
 }
 
+// Haven's chat. t identifies a message. quiet: not part of a conversation, so it never plays by itself.
+export interface HavenMessage {
+  t: number;
+  from: 'you' | 'claude' | 'haven' | 'notice';
+  text: string;
+  quiet: boolean;
+}
+
+export interface HavenState {
+  online: boolean;
+  busy: boolean;
+  listening: boolean; // hands-free is on, on the machine running the hub
+  messages: HavenMessage[];
+}
+
+// One sentence of a voice message is ready. auto: a new reply, not a press of play.
+// headphones: the hub's own machine plays through headphones. part -1 with failed: it couldn't be made.
+export interface HavenAudio {
+  t: number;
+  part: number;
+  done: boolean;
+  auto: boolean;
+  headphones: boolean;
+  failed?: boolean;
+}
+
 // A journal: voice entries kept apart for one project and one tab (see hub/src/journal.ts).
 export interface JournalRef {
   projectId: string;
@@ -494,6 +527,12 @@ export interface Methods {
   'voice.delete': { params: { id: string; journal?: JournalRef }; result: null };
   'voice.saveText': { params: { id: string; text: string; journal?: JournalRef }; result: null }; // edit a transcript
   'voice.file': { params: { id: string; projectId: string | null }; result: null }; // move to a project
+  'haven.state': { params: Empty; result: HavenState };
+  'haven.send': { params: { text: string }; result: null };
+  'haven.speak': { params: { t: number }; result: { ready: number; done: boolean } };
+  'haven.audio': { params: { t: number; part: number }; result: string }; // the .wav, base64
+  'haven.listen': { params: { on: boolean }; result: null };
+  'haven.playing': { params: { playing: boolean }; result: null };
   'journal.list': { params: { projectId: string }; result: Journal[] };
   'journal.create': { params: { projectId: string; name?: string }; result: Journal };
   'journal.rename': { params: JournalRef & { name: string }; result: Journal };
