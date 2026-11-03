@@ -173,6 +173,9 @@ export class Haven {
     if (this.seenUntil === null) {
       this.messages = all.flatMap((m) => this.shown(m, true)).slice(-SHOWN);
       this.seenUntil = newest;
+      // Picking up mid-answer, as after a restart: what follows still belongs to a
+      // conversation. Quiet time starts this way too, but that's the rarer mistake.
+      this.inTurn = busy;
       return this.update();
     }
     for (const m of all) if (m.t > this.seenUntil) this.take(m);

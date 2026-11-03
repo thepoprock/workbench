@@ -584,4 +584,6 @@ kbd { font: inherit; font-size: 11px; color: var(--muted); }
   border-radius: 6px; color: var(--text); font: inherit; cursor: pointer;
 }
 .haven-mic.on { background: var(--bad); }
-.haven-open .phone-dock { display: none; }
+/* The phone's terminal keyboard bar loads after this file; Haven has its own compose row. */
+.haven-open .phone-dock { display: none !important; }
+.haven-open .workspace { padding-block-end: 0 !important; }
