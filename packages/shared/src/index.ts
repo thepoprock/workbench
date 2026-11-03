@@ -37,20 +37,26 @@ export interface Project {
   createdAt: number;
   lastActiveAt: number; // last session start or prompt; createdAt if none
   archived: boolean;
+  ownerId: string | null; // a WorkbenchUser; null: the Workbench's owner
 }
 
-// Another account's Workbench on this Mac, as its summary shows it (see hub/src/share.ts).
-export interface SharedWorkbench {
-  owner: string; // whose it is, e.g. "Haven"
-  updatedAt: number;
-  running: boolean; // its hub rewrote the summary recently
-  projects: {
-    id: string;
-    name: string;
-    rootPath: string | null;
-    lastActiveAt: number;
-    running: { title: string; kind: SessionKind; state: AgentState | null }[];
-  }[];
+// Someone who uses this Workbench. The owner runs it (and needs no entry); everyone
+// else is added in Users… with a Mac account their sessions run as, and a key of their own.
+export interface WorkbenchUser {
+  id: string;
+  name: string;
+  account: string; // Mac account their projects run as
+  createdAt: number;
+}
+export interface UserCheck {
+  canRun: boolean; // Workbench may start programs as their account (the admin rule is in place)
+  rule: string; // the command that adds that rule, to run once with an admin password
+  keyDelivered: boolean; // their key is in ~/.workbench-key in their account
+}
+export interface Me {
+  id: string | null; // null: the owner
+  name: string;
+  owner: boolean;
 }
 
 export type TermStatus = 'running' | 'exited' | 'lost';
@@ -415,7 +421,15 @@ export interface Methods {
   'project.archive': { params: { id: string; archived: boolean }; result: Project };
   // Sidebar order (drag to sort): ids in the order wanted; projects not listed follow, by name.
   'project.reorder': { params: { ids: string[] }; result: null };
-  'shared.workbenches': { params: Empty; result: SharedWorkbench[] }; // other accounts' projects, read-only
+  'project.setOwner': { params: { id: string; ownerId: string | null }; result: Project }; // owner only
+  // Users (owner only, except user.me).
+  'user.me': { params: Empty; result: Me };
+  'user.list': { params: Empty; result: (WorkbenchUser & UserCheck)[] };
+  'user.add': { params: { name: string; account: string }; result: WorkbenchUser & UserCheck };
+  'user.update': { params: { id: string; name: string }; result: WorkbenchUser };
+  'user.remove': { params: { id: string }; result: null }; // their projects are archived
+  'user.newKey': { params: { id: string }; result: UserCheck }; // the old key stops working
+  'user.check': { params: { id: string }; result: UserCheck };
 
   // Terminals. The hub owns the PTY; clients attach/detach freely.
   'term.create': { params: { projectId: string; cwd?: string; cols: number; rows: number }; result: TermSession };

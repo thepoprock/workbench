@@ -9,6 +9,7 @@ import type { AgentInfo, ScrollbackChunk, SessionKind, TermSession, TermStatus }
 import type { DB } from './db/index.ts';
 import { scrollbackDir } from './paths.ts';
 import { loginShell } from './platform.ts';
+import { SUDO } from './users.ts';
 import type { Client } from './server.ts';
 import { stripAnsi } from './text.ts';
 
@@ -67,6 +68,19 @@ interface Live {
 }
 
 const logPath = (id: string) => join(scrollbackDir, `${id}.log`);
+// What must never reach another account's session: the owner's Claude logins.
+const OWNER_SECRETS = /^(CLAUDE_CONFIG_DIR|CLAUDE_CODE_OAUTH_TOKEN|ANTHROPIC_[A-Z_]+)$/;
+
+// The same command, run as `account` through sudo: their home, their login shell's PATH,
+// their Claude login. sudo drops the hub's environment; what the session needs (hook
+// address and token) is passed on explicitly.
+function asAccount(account: string, run: SpawnSpec): { file: string; args: string[] } {
+  const env = Object.entries({ TERM: 'xterm-256color', COLORTERM: 'truecolor', ...run.env })
+    .filter(([k]) => !OWNER_SECRETS.test(k))
+    .map(([k, v]) => `${k}=${v}`);
+  return { file: SUDO, args: ['-n', '-u', account, '-H', '--', '/usr/bin/env', ...env, '/bin/zsh', '-l', '-c', 'exec "$@"', 'zsh', run.file, ...run.args] };
+}
+
 const SESSION_COLS = 'id, project_id, kind, harness_id, external_id, title, cwd, status, exit_code, started_at, ended_at';
 
 // Runtime markers a parent Claude Code session sets. If inherited, a claude
@@ -95,6 +109,9 @@ export class Terminals {
   onEnded: (session: TermSession, killedByUser: boolean) => void = () => {};
   onActive: (projectId: string) => void = () => {}; // a session started or a prompt was sent
   onOutput: (session: TermSession, data: string) => void = () => {};
+
+  // The Mac account a project's sessions run as; null: the hub's own (set by the hub).
+  accountFor: (projectId: string | null) => string | null = () => null;
 
   constructor(
     private db: DB,
@@ -189,7 +206,9 @@ export class Terminals {
 
     const run: SpawnSpec = spec ?? { kind: 'terminal', harness: null, ...loginShell() };
     if (run.fixedCols) cols = run.fixedCols;
-    const proc = pty.spawn(run.file, run.args, {
+    const account = this.accountFor(projectId);
+    const command = account ? asAccount(account, run) : { file: run.file, args: run.args };
+    const proc = pty.spawn(command.file, command.args, {
       name: 'xterm-256color',
       cols,
       rows,

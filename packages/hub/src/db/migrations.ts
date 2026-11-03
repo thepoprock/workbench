@@ -220,4 +220,17 @@ export const migrations: string[] = [
   );
   CREATE INDEX jobmail_ts ON jobmail(ts);
   `,
+
+  // 13 — other people use this Workbench: each has a key and a Mac account their
+  //      projects run as (NULL owner_id = the Workbench's owner)
+  `
+  CREATE TABLE users (
+    id         TEXT PRIMARY KEY,
+    name       TEXT NOT NULL,
+    account    TEXT NOT NULL UNIQUE,
+    key_hash   TEXT NOT NULL,
+    created_at INTEGER NOT NULL
+  );
+  ALTER TABLE projects ADD COLUMN owner_id TEXT REFERENCES users(id);
+  `,
 ];

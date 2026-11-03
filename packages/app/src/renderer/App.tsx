@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState, useSyncExternalStore, type FormEvent } from 'react';
 import type { DockviewApi } from 'dockview-react';
-import type { HubInfo, Idea, Project, SearchHit, TermSession } from '@workbench/shared';
+import type { HubInfo, Idea, Project, SearchHit, TermSession, WorkbenchUser } from '@workbench/shared';
 import { IdeasList } from './IdeasList.tsx';
 import { HavenView } from './HavenView.tsx';
 import { setShown, startHaven, useHaven } from './haven.ts';
@@ -13,7 +13,8 @@ import { McpManager } from './McpManager.tsx';
 import { Organize } from './Organize.tsx';
 import { putSessions, statusClass, useProjectSessions, useRunningSessions } from './sessions.ts';
 import { hub } from './hub.ts';
-import { Projects, SharedProjects } from './Projects.tsx';
+import { Projects } from './Projects.tsx';
+import { UsersManager } from './UsersManager.tsx';
 import { openChangelog, openClaudeFiles, openErrors, openHistory, openJobMail, openJournal, openProject, openRecordings, openRemote, openTerminal, replaceTerminal } from './dock.ts';
 import { Elsewhere } from './Elsewhere.tsx';
 import { Search } from './Search.tsx';
@@ -77,6 +78,8 @@ export function App() {
   const [searching, setSearching] = useState(false);
   const [managingHarnesses, setManagingHarnesses] = useState(false);
   const [managingMcp, setManagingMcp] = useState(false);
+  const [managingUsers, setManagingUsers] = useState(false);
+  const [users, setUsers] = useState<WorkbenchUser[]>([]);
   const [organizing, setOrganizing] = useState(false);
   const [errorCounts, setErrorCounts] = useState<Record<string, number>>({});
   const [jobUnseen, setJobUnseen] = useState(0);
@@ -162,6 +165,7 @@ export function App() {
     try {
       setInfo(await hub.call('hub.info', {}));
       setProjects(await hub.call('project.list', { includeArchived: true }));
+      setUsers(await hub.call('user.list', {}).catch(() => []));
       await loadIdeas();
       await loadAccounts();
     } catch (err) {
@@ -455,6 +459,7 @@ export function App() {
           }}
           onChanged={refresh}
           onError={setError}
+          users={users}
         />
         <form className="new-project" onSubmit={onSubmit}>
           <input
@@ -467,7 +472,24 @@ export function App() {
             📁
           </button>
         </form>
-        <SharedProjects />
+        {users.map((u) => (
+          <Projects
+            key={u.id}
+            owner={u}
+            users={users}
+            onOrganize={() => {}}
+            onImport={() => {}}
+            errorCounts={errorCounts}
+            projects={projects}
+            selected={currentIdea ? null : selected}
+            onSelect={(id) => {
+              showHaven(false);
+              setSelected(id);
+            }}
+            onChanged={refresh}
+            onError={setError}
+          />
+        ))}
 
         {current && (
           <Agents
@@ -552,6 +574,9 @@ export function App() {
         </button>
         <button className="footer-link" onClick={() => setManagingMcp(true)} disabled={status !== 'connected'}>
           MCP servers…
+        </button>
+        <button className="footer-link" onClick={() => setManagingUsers(true)} disabled={status !== 'connected'}>
+          Users…
         </button>
         <HubBadge status={status} info={info} />
       </aside>
@@ -651,6 +676,14 @@ export function App() {
               },
               (err) => setError((err as Error).message),
             );
+          }}
+        />
+      )}
+      {managingUsers && (
+        <UsersManager
+          onClose={() => {
+            setManagingUsers(false);
+            void refresh();
           }}
         />
       )}

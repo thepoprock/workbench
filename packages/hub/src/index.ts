@@ -16,7 +16,10 @@ import { Harnesses } from './harnesses.ts';
 import { Voice } from './voice.ts';
 import { Haven } from './haven.ts';
 import { JobMailWatch } from './jobmail.ts';
-import { startSharing } from './share.ts';
+import { Users } from './users.ts';
+import { guarded } from './guard.ts';
+import { publishForUsers } from './userAccess.ts';
+import type { Dispatch } from './server.ts';
 
 const VERSION = '0.0.1';
 
@@ -66,7 +69,6 @@ async function main(): Promise<void> {
     "INSERT OR IGNORE INTO harnesses (id, type, name, created_at) VALUES (?, 'claude-code', 'Claude Code', ?)",
   ).run(HARNESS_ID, Date.now());
   const claude = new ClaudeHarness(terms, () => server?.port ?? 0);
-  startSharing(db, terms);
   // Every Claude account's transcripts are searchable (harnesses is created below).
   let harnessesRef: Harnesses | null = null;
   const history = new History(db, () =>
@@ -128,7 +130,9 @@ async function main(): Promise<void> {
   const haven = new Haven((event, data) => server?.broadcast({ event, data } as Push));
   const jobmail = new JobMailWatch(db, (mail, alert) => server?.broadcast({ event: 'jobmail.update', data: { mail, alert } }));
   const hubOps: HubOps = {};
-  const dispatch = makeDispatch(
+  const users = new Users(db);
+  terms.accountFor = (projectId) => users.accountFor(projectId);
+  const base = makeDispatch(
     db, terms, claude, history, ideas, changelog, errors, harnesses, voice, haven, jobmail,
     (harnessId) => server?.broadcast({ event: 'account.update', data: { harnessId } }),
     (project) => server?.broadcast({ event: 'project.update', data: project }),
@@ -141,6 +145,39 @@ async function main(): Promise<void> {
     },
     hubOps,
   );
+
+  // Users (owner only; the guard keeps everyone else to their own projects).
+  const projectChanged = (id: string) => {
+    const p = readProject(db, id);
+    if (p) server?.broadcast({ event: 'project.update', data: p });
+  };
+  const userMethods: Record<string, (p: Record<string, string>, client: Parameters<Dispatch>[1]) => unknown> = {
+    'user.me': (_, client) => client.user,
+    'user.list': () => Promise.all(users.list().map(async (u) => ({ ...u, ...(await users.check(u.id)) }))),
+    'user.add': ({ name, account }) => users.add(name, account),
+    'user.update': ({ id, name }) => users.rename(id, name),
+    'user.remove': ({ id }) => {
+      const owned = (db.prepare('SELECT id FROM projects WHERE owner_id = ?').all(id) as { id: string }[]).map((r) => r.id);
+      if (owned.some((pid) => terms.list(pid).some((s) => s.status === 'running'))) throw new Error('end their running sessions first');
+      users.remove(id);
+      owned.forEach(projectChanged);
+      return null;
+    },
+    'user.newKey': ({ id }) => users.newKey(id),
+    'user.check': ({ id }) => users.check(id),
+    'project.setOwner': ({ id, ownerId }) => {
+      if (terms.list(id).some((s) => s.status === 'running')) throw new Error('end its running sessions first: they run as the current owner');
+      if (ownerId) users.get(ownerId);
+      db.prepare('UPDATE projects SET owner_id = ? WHERE id = ?').run(ownerId ?? null, id);
+      projectChanged(id);
+      return readProject(db, id);
+    },
+  };
+  const access = guarded(db, ((req, client) => {
+    const own = userMethods[req.method];
+    return own ? own((req.params ?? {}) as Record<string, string>, client) : base(req, client);
+  }) as Dispatch);
+  const dispatch = access.dispatch;
 
   // An account ran out: tell the UI, or (auto) switch Credits to the next
   // main-folder account with a token and move the conversation there.
@@ -173,7 +210,9 @@ async function main(): Promise<void> {
     token,
     (client) => terms.dropClient(client),
     (path, headers, body) => claude.hook(path, headers['x-workbench-hook'] as string | undefined, body),
+    { owner: users.owner, byKey: (key) => users.byKey(key), visible: access.visible },
   );
+  publishForUsers(server.port);
   const discovery: HubDiscovery = { port: server.port, token, pid: process.pid };
   writeFileSync(discoveryPath, JSON.stringify(discovery), { mode: 0o600 });
   log(`listening on 127.0.0.1:${server.port} (pid ${process.pid}, data ${dataDir})`);

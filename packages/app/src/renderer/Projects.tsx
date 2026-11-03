@@ -1,5 +1,5 @@
 import { useEffect, useState, type DragEvent } from 'react';
-import type { Project, SharedWorkbench } from '@workbench/shared';
+import type { Project, WorkbenchUser } from '@workbench/shared';
 import { revealLabel } from './platform.ts';
 import { hub } from './hub.ts';
 
@@ -45,9 +45,13 @@ interface Props {
   onSelect: (id: string | null) => void;
   onChanged: () => Promise<void>;
   onError: (msg: string) => void;
+  owner?: WorkbenchUser; // set: this list is that user's projects, below your own
+  users?: WorkbenchUser[]; // who projects can be given to (yours only)
 }
 
-export function Projects({ onImport, onOrganize, errorCounts, projects, selected, onSelect, onChanged, onError }: Props) {
+export function Projects({ onImport, onOrganize, errorCounts, projects: all, selected, onSelect, onChanged, onError, owner, users = [] }: Props) {
+  const projects = all.filter((p) => p.ownerId === (owner?.id ?? null));
+  const keyPrefix = owner ? `.${owner.id}` : '';
   const [editing, setEditing] = useState<string | null>(null);
   const [draft, setDraft] = useState('');
   const [showArchived, setShowArchived] = useState(false);
@@ -56,8 +60,8 @@ export function Projects({ onImport, onOrganize, errorCounts, projects, selected
   const [order, setOrder] = useState<string[] | null>(null);
   const [drag, setDrag] = useState<{ id: string; over: string | null; after: boolean } | null>(null);
   useEffect(() => setOrder(null), [projects]); // the hub's order arrived
-  const [folded, setFolded] = useState(() => load(FOLDED_KEY, 'no') === 'yes');
-  const [limit, setLimit] = useState(() => Number(load(LIMIT_KEY, '5')) || 0);
+  const [folded, setFolded] = useState(() => load(FOLDED_KEY + keyPrefix, 'no') === 'yes');
+  const [limit, setLimit] = useState(() => Number(load(LIMIT_KEY + keyPrefix, '5')) || 0);
   const [showAll, setShowAll] = useState(false);
 
   const stored = projects.filter((p) => !p.archived);
@@ -79,7 +83,7 @@ export function Projects({ onImport, onOrganize, errorCounts, projects, selected
     );
     if (choice === null || choice === undefined) return;
     setLimit(Number(choice));
-    save(LIMIT_KEY, choice);
+    save(LIMIT_KEY + keyPrefix, choice);
     setShowAll(false);
   };
 
@@ -115,9 +119,17 @@ export function Projects({ onImport, onOrganize, errorCounts, projects, selected
             { type: 'separator' },
             ...harnesses.map((h) => ({ id: `harness:${h.id}`, label: `${h.id === def ? '✓ ' : '   '}Default agent: ${h.name}` })),
             { type: 'separator' },
+            ...(owner ? [{ id: 'owner:', label: 'Make it yours (runs as you)' }] : []),
+            ...users.filter((u) => u.id !== owner?.id).map((u) => ({ id: `owner:${u.id}`, label: `Give to ${u.name} (runs as ${u.account})` })),
+            { type: 'separator' },
             { id: 'archive', label: 'Archive' },
           ],
     );
+    if (choice?.startsWith('owner:')) {
+      const ownerId = choice.slice('owner:'.length) || null;
+      await run(() => hub.call('project.setOwner', { id: p.id, ownerId }));
+      return;
+    }
     if (choice?.startsWith('harness:')) {
       const id = choice.slice('harness:'.length);
       await run(() => hub.call('project.update', { id: p.id, defaultHarnessId: id === 'claude-code' ? null : id }));
@@ -218,11 +230,11 @@ export function Projects({ onImport, onOrganize, errorCounts, projects, selected
           role="button"
           onClick={() => {
             setFolded(!folded);
-            save(FOLDED_KEY, folded ? 'no' : 'yes');
+            save(FOLDED_KEY + keyPrefix, folded ? 'no' : 'yes');
           }}
           title={folded ? 'Show projects' : 'Fold projects away'}
         >
-          {folded ? '▸' : '▾'} Projects
+          {folded ? '▸' : '▾'} {owner ? `${owner.name}'s projects` : 'Projects'}
         </span>
         <span className="section-actions">
         <button className="sort-toggle" onClick={() => void pickLimit()} title="How many projects to show before “Show all”">
@@ -252,6 +264,8 @@ export function Projects({ onImport, onOrganize, errorCounts, projects, selected
           {showAll ? '▴ Show fewer' : `▾ Show all (${active.length - shown.length} more)`}
         </button>
       )}
+      {!owner && (
+        <>
       <button className="disclosure" onClick={onImport} title="Create a project for every folder you've used Claude in">
         ⤓ Import from Claude
       </button>
@@ -266,78 +280,8 @@ export function Projects({ onImport, onOrganize, errorCounts, projects, selected
           {showArchived && <ul className="list">{archived.map(item)}</ul>}
         </>
       )}
-    </>
-  );
-}
-
-// Other accounts' Workbenches on this Mac (Haven's), read-only: what they have started,
-// kept apart from your own projects. Each has its own section, folded like Projects.
-const SHARED_POLL_MS = 10_000;
-const ago = (ts: number) => {
-  const m = Math.round((Date.now() - ts) / 60_000);
-  return m < 1 ? 'just now' : m < 60 ? `${m} min ago` : m < 1440 ? `${Math.round(m / 60)} h ago` : `${Math.round(m / 1440)} d ago`;
-};
-
-export function SharedProjects() {
-  const [others, setOthers] = useState<SharedWorkbench[]>([]);
-  const [open, setOpen] = useState<Record<string, boolean>>({});
-  useEffect(() => {
-    let stop = false;
-    const poll = () =>
-      void hub.call('shared.workbenches', {}).then(
-        (w) => !stop && setOthers(w),
-        () => {},
-      );
-    poll();
-    const timer = setInterval(poll, SHARED_POLL_MS);
-    const offStatus = hub.onStatus((s) => s === 'connected' && poll()); // the first poll can beat the connection
-    return () => {
-      stop = true;
-      clearInterval(timer);
-      offStatus();
-    };
-  }, []);
-
-  return (
-    <>
-      {others.map((w) => {
-        const folded = load(`workbench.sharedFolded.${w.owner}`, 'no') === 'yes' && !open[w.owner];
-        const projects = [...w.projects].sort((a, b) => b.lastActiveAt - a.lastActiveAt);
-        return (
-          <div key={w.owner}>
-            <div className="section-label with-action">
-              <span
-                className="fold"
-                role="button"
-                onClick={() => {
-                  save(`workbench.sharedFolded.${w.owner}`, folded ? 'no' : 'yes');
-                  setOpen({ ...open, [w.owner]: folded });
-                }}
-                title={`${w.owner}'s own Workbench, read-only. ${w.running ? 'Running' : 'Not running'}; updated ${ago(w.updatedAt)}.`}
-              >
-                {folded ? '▸' : '▾'} {w.owner}'s projects
-              </span>
-              {!w.running && <span className="muted small">offline</span>}
-            </div>
-            {!folded && (
-              <ul className="list shared">
-                {projects.map((p) => (
-                  <li key={p.id}>
-                    <button
-                      className="ended"
-                      title={[p.rootPath ?? 'no folder', `last worked in ${ago(p.lastActiveAt)}`, ...p.running.map((r) => `${r.title}${r.state ? ` (${r.state})` : ''}`)].join('\n')}
-                    >
-                      {p.running.length > 0 && <span className={`dot ${p.running.some((r) => r.state === 'working') ? 'agent-working' : 'agent-idle'}`} />}
-                      <span className="idea-name">{p.name}</span>
-                    </button>
-                  </li>
-                ))}
-                {projects.length === 0 && <li className="empty">No projects yet</li>}
-              </ul>
-            )}
-          </div>
-        );
-      })}
+        </>
+      )}
     </>
   );
 }

@@ -22,12 +22,12 @@ import type { Harnesses } from './harnesses.ts';
 import type { Terminals } from './terminals.ts';
 import { codexHistory } from './codexhistory.ts';
 import type { JobMailWatch } from './jobmail.ts';
-import { readShared } from './share.ts';
 import { createJournal, listJournals, renameJournal } from './journal.ts';
 import { deleteRecording, fileRecording, listJournalEntries, listRecordings, readRecordingAudio, saveRecordingText, type Voice } from './voice.ts';
 
 type Handler<M extends Method> = (params: Methods[M]['params'], client: Client) => unknown;
-type Handlers = { [M in Method]: Handler<M> };
+// Users and project owners are handled in index.ts, next to who is asking.
+type Handlers = { [M in Exclude<Method, `user.${string}` | 'project.setOwner'>]: Handler<M> };
 
 interface ProjectRow {
   id: string;
@@ -37,6 +37,7 @@ interface ProjectRow {
   created_at: number;
   archived: number;
   last_active?: number | null;
+  owner_id: string | null;
 }
 
 // When the user last worked in a project: a session started or a prompt sent.
@@ -55,6 +56,7 @@ const toProject = (r: ProjectRow): Project => ({
   createdAt: r.created_at,
   lastActiveAt: r.last_active ?? r.created_at,
   archived: r.archived === 1,
+  ownerId: r.owner_id ?? null,
 });
 
 export function listProjects(db: DB, includeArchived: boolean): Project[] {
@@ -149,6 +151,7 @@ export function makeDispatch(
       name: trimmed,
       root_path: rootPath ?? null,
       default_harness_id: null,
+      owner_id: null,
       created_at: Date.now(),
       archived: 0,
     };
@@ -252,7 +255,6 @@ export function makeDispatch(
     'hub.ping': () => ({ now: Date.now() }),
 
     'project.list': ({ includeArchived }) => listProjects(db, !!includeArchived),
-    'shared.workbenches': () => readShared(),
 
     'project.create': ({ name, rootPath }) => createProject(name, rootPath),
 
@@ -589,7 +591,7 @@ export function makeDispatch(
   };
 
   return (req: Request, client: Client) => {
-    const handler = handlers[req.method] as Handler<Method> | undefined;
+    const handler = (handlers as Partial<Record<Method, unknown>>)[req.method] as Handler<Method> | undefined;
     if (!handler) throw new Error(`unknown method ${req.method}`);
     return handler(req.params ?? ({} as never), client);
   };
