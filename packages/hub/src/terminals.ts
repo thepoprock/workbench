@@ -1,3 +1,4 @@
+import { execFileSync } from 'node:child_process';
 import { randomUUID } from 'node:crypto';
 import { closeSync, existsSync, openSync, readSync, statSync, writeSync } from 'node:fs';
 import { homedir } from 'node:os';
@@ -54,6 +55,7 @@ interface Live {
   killed: boolean; // ended via kill() (a closed tab), not on its own
   ephemeral: boolean;
   fixedCols: number | null;
+  account: string | null; // runs as this account (through sudo), not the hub's
   failed: Set<string>; // side tasks that have failed (logged once)
   proc: pty.IPty | null; // null once exited
   screen: headless.Terminal;
@@ -79,6 +81,31 @@ function asAccount(account: string, run: SpawnSpec): { file: string; args: strin
     .filter(([k]) => !OWNER_SECRETS.test(k))
     .map(([k, v]) => `${k}=${v}`);
   return { file: SUDO, args: ['-n', '-u', account, '-H', '--', '/usr/bin/env', ...env, '/bin/zsh', '-l', '-c', 'exec "$@"', 'zsh', run.file, ...run.args] };
+}
+
+// The hub can't signal a session running as another account: its PTY holds sudo, which
+// runs as root. That account's own processes under it are ended as that account.
+function endAs(account: string, root: number): void {
+  const mine: string[] = [];
+  const walk = (pid: number) => {
+    let kids: string[] = [];
+    try {
+      kids = execFileSync('/usr/bin/pgrep', ['-P', String(pid)], { encoding: 'utf8' }).split('\n').filter(Boolean);
+    } catch {
+      // no children
+    }
+    for (const k of kids) {
+      const owner = execFileSync('/bin/ps', ['-o', 'user=', '-p', k], { encoding: 'utf8' }).trim();
+      if (owner === account) mine.push(k);
+      else walk(Number(k));
+    }
+  };
+  try {
+    walk(root);
+    if (mine.length) execFileSync(SUDO, ['-n', '-u', account, '--', '/bin/kill', '-HUP', ...mine], { stdio: 'ignore', timeout: 10_000 });
+  } catch (err) {
+    console.log(`${new Date().toISOString()} [terminals] could not end ${account}'s session: ${(err as Error).message}`);
+  }
 }
 
 const SESSION_COLS = 'id, project_id, kind, harness_id, external_id, title, cwd, status, exit_code, started_at, ended_at';
@@ -245,6 +272,7 @@ export class Terminals {
       killed: false,
       ephemeral: !!run.ephemeral,
       fixedCols: run.fixedCols ?? null,
+      account,
       failed: new Set(),
       proc,
       screen,
@@ -404,11 +432,16 @@ export class Terminals {
     const s = this.live.get(sessionId);
     if (!s?.proc) return;
     s.killed = true;
-    s.proc.kill();
+    this.end(s);
   }
 
   shutdown(): void {
-    for (const s of this.live.values()) s.proc?.kill();
+    for (const s of this.live.values()) if (s.proc) this.end(s);
+  }
+
+  private end(s: Live): void {
+    if (s.account) endAs(s.account, s.proc!.pid);
+    else s.proc!.kill();
   }
 
   // Delivery first, bookkeeping after: a failing disk write, index or error
