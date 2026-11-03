@@ -505,6 +505,8 @@ kbd { font: inherit; font-size: 11px; color: var(--muted); }
   border: 1px solid var(--border); background: var(--bg); color: var(--text);
 }
 .mcp-section { padding-top: 8px; }
+.users-claude { margin: 2px 0; }
+.users-claude select { font-size: 12px; }
 .users-warn { white-space: normal !important; color: #d9a441; }
 .users-rule { display: block; margin-top: 4px; padding: 6px 8px; border-radius: 4px; background: var(--bg); font-size: 11px; white-space: pre-wrap; word-break: break-all; cursor: copy; }
 .users-error { margin: 8px 16px 0; }

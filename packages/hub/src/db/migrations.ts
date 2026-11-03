@@ -233,4 +233,7 @@ export const migrations: string[] = [
   );
   ALTER TABLE projects ADD COLUMN owner_id TEXT REFERENCES users(id);
   `,
+
+  // 14 — a user's Claude runs on one of the owner's token accounts (NULL: their own login)
+  `ALTER TABLE users ADD COLUMN claude_harness TEXT;`,
 ];

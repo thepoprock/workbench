@@ -165,6 +165,13 @@ async function main(): Promise<void> {
     },
     'user.newKey': ({ id }) => users.newKey(id),
     'user.check': ({ id }) => users.check(id),
+    'user.setClaude': async ({ id, harnessId }) => {
+      if (!harnessId) return users.setClaude(id, null, null);
+      const h = harnesses.get(harnessId);
+      if (h.type !== 'claude-code' || h.config.mode !== 'token') throw new Error('choose a token account (Harnesses → Add Claude account → token)');
+      const { token } = await harnesses.mainFolderAccount(harnessId);
+      return users.setClaude(id, harnessId, token!);
+    },
     'project.setOwner': ({ id, ownerId }) => {
       if (terms.list(id).some((s) => s.status === 'running')) throw new Error('end its running sessions first: they run as the current owner');
       if (ownerId) users.get(ownerId);

@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from 'react';
-import type { UserCheck, WorkbenchUser } from '@workbench/shared';
+import type { Harness, UserCheck, WorkbenchUser } from '@workbench/shared';
 import { hub } from './hub.ts';
 
 type Row = WorkbenchUser & UserCheck;
@@ -13,10 +13,12 @@ export function UsersManager({ onClose }: { onClose: () => void }) {
   const [account, setAccount] = useState('');
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  const [tokenAccounts, setTokenAccounts] = useState<Harness[]>([]);
 
   const load = useCallback(async () => {
     try {
       setUsers(await hub.call('user.list', {}));
+      setTokenAccounts((await hub.call('harness.list', {})).filter((h) => h.type === 'claude-code' && h.config.mode === 'token'));
     } catch (err) {
       setError((err as Error).message);
     }
@@ -42,6 +44,22 @@ export function UsersManager({ onClose }: { onClose: () => void }) {
         <span className="hm-name">
           {u.name} <span className="muted small">Mac account {u.account}</span>
         </span>
+        <label className="small users-claude" title="Claude in their projects signs in with this account's token (a setup-token on your subscription)">
+          Claude:{' '}
+          <select
+            value={u.claudeAccount ?? ''}
+            disabled={busy || !u.canRun}
+            onChange={(e) => void run(() => hub.call('user.setClaude', { id: u.id, harnessId: e.target.value || null }))}
+          >
+            <option value="">their own sign-in</option>
+            {tokenAccounts.map((h) => (
+              <option key={h.id} value={h.id}>
+                {h.name}
+              </option>
+            ))}
+          </select>
+          {tokenAccounts.length === 0 && <span className="muted"> — to share your subscription, add a token account under Harnesses first</span>}
+        </label>
         {u.canRun ? (
           <span className="small">{u.keyDelivered ? 'Ready: their key is in ~/.workbench-key in their account.' : 'Allowed, but their key is missing — press New key.'}</span>
         ) : (

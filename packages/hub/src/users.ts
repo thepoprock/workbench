@@ -19,9 +19,16 @@ interface Row {
   account: string;
   key_hash: string;
   created_at: number;
+  claude_harness: string | null;
 }
 
-const toUser = (r: Row): WorkbenchUser => ({ id: r.id, name: r.name, account: r.account, createdAt: r.created_at });
+const toUser = (r: Row): WorkbenchUser => ({ id: r.id, name: r.name, account: r.account, createdAt: r.created_at, claudeAccount: r.claude_harness });
+
+// In their account: the token their Claude signs in with, and the line in ~/.zprofile that
+// reads it, so Claude started over SSH uses it too. Never on a command line, where any
+// account on the Mac could see it in the process list.
+export const TOKEN_FILE = '.workbench-claude-token';
+const ZPROFILE_LINE = `[ -r ~/${TOKEN_FILE} ] && export CLAUDE_CODE_OAUTH_TOKEN="$(<~/${TOKEN_FILE})"  # Claude sign-in, set by Workbench`;
 
 export class Users {
   readonly me = userInfo().username; // the account the hub runs as: the owner's
@@ -85,6 +92,18 @@ export class Users {
     this.get(id);
     this.db.prepare('UPDATE projects SET archived = 1, owner_id = NULL WHERE owner_id = ?').run(id);
     this.db.prepare('DELETE FROM users WHERE id = ?').run(id);
+  }
+
+  // token null: take it away (their Claude then needs a login of its own).
+  async setClaude(id: string, harnessId: string | null, token: string | null): Promise<WorkbenchUser> {
+    const { account } = this.get(id);
+    const ok = token
+      ? (await this.asUser(account, ['/bin/sh', '-c', `umask 077 && cat > "$HOME/${TOKEN_FILE}"`], token)) &&
+        (await this.asUser(account, ['/bin/sh', '-c', `touch "$HOME/.zprofile" && (grep -qsF '${TOKEN_FILE}' "$HOME/.zprofile" || cat >> "$HOME/.zprofile")`], `\n${ZPROFILE_LINE}\n`))
+      : await this.asUser(account, ['/bin/rm', '-f', `/Users/${account}/${TOKEN_FILE}`]);
+    if (!ok) throw new Error(`couldn't write to ${account}'s account; is the admin rule in place? (Users → Check)`);
+    this.db.prepare('UPDATE users SET claude_harness = ? WHERE id = ?').run(token ? harnessId : null, id);
+    return this.get(id);
   }
 
   // A new key, written into their account as ~/.workbench-key when the rule allows.
