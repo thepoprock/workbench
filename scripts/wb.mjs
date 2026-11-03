@@ -11,7 +11,7 @@ const require = createRequire(import.meta.url);
 const { Terminal } = require('@xterm/headless');
 
 const USAGE = `wb projects                        list projects
-wb new <name> [folder]             new project (folder defaults to ~/projects/<name>)
+wb new <name> [folder]             new project (folder: Workbench picks one if left out)
 wb claude <project> [--resume id]  start a Claude session; prints its id
 wb shell <project>                 start a shell
 wb sessions [project]              running sessions (with a project: all of its sessions)
@@ -125,10 +125,12 @@ async function main([cmd, ...args]) {
     } else if (cmd === 'projects') for (const p of await hub.call('project.list', {})) console.log(`${p.id}  ${p.name}  ${p.rootPath ?? ''}`);
     else if (cmd === 'new') {
       if (!args[0]) throw new Error('wb new <name> [folder]');
-      const folder = resolve(args[1] ?? join(homedir(), 'projects', args[0].replace(/[^\w.-]+/g, '-')));
-      mkdirSync(folder, { recursive: true });
-      const p = await hub.call('project.create', { name: args[0], rootPath: folder });
-      console.log(`${p.id}  ${p.name}  ${folder}`);
+      // With full access the project runs as the owner, so Workbench picks a folder they can write.
+      const full = (await hub.call('user.me', {})).owner;
+      let folder = args[1] ? resolve(args[1]) : full ? undefined : join(homedir(), 'projects', args[0].replace(/[^\w.-]+/g, '-'));
+      if (folder) mkdirSync(folder, { recursive: true });
+      const p = await hub.call('project.create', { name: args[0], ...(folder ? { rootPath: folder } : {}) });
+      console.log(`${p.id}  ${p.name}  ${p.rootPath ?? folder ?? ''}`);
     } else if (cmd === 'claude' || cmd === 'shell') {
       if (!args[0]) throw new Error(`wb ${cmd} <project>`);
       const p = await project(hub, args[0]);

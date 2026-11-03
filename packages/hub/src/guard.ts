@@ -1,10 +1,21 @@
 // What a user other than the owner may do: their own projects and the sessions in
 // them, nothing else. The owner's connection passes through untouched.
 import type { Me, Methods, Project, Push, TermSession } from '@workbench/shared';
+import { mkdirSync } from 'node:fs';
+import { homedir } from 'node:os';
+import { join } from 'node:path';
 import type { DB } from './db/index.ts';
 import type { Client, Dispatch } from './server.ts';
 
 type Params = Record<string, unknown>;
+
+// ~/<User name>/<project name> in the owner's account, made if missing.
+function ownFolder(userName: string, project: string): string {
+  const safe = (s: string) => s.trim().replace(/[^\w .-]+/g, '-').replace(/^\.+/, '') || 'project';
+  const dir = join(homedir(), safe(userName), safe(project));
+  mkdirSync(dir, { recursive: true });
+  return dir;
+}
 
 export function guarded(db: DB, dispatch: Dispatch): { dispatch: Dispatch; visible: (user: Me, push: Push) => boolean } {
   const ownerOf = (projectId: unknown) =>
@@ -44,7 +55,17 @@ export function guarded(db: DB, dispatch: Dispatch): { dispatch: Dispatch; visib
 
   const forUser: Dispatch = async (req, client: Client) => {
     const user = client.user;
-    if (user.owner) return dispatch(req, client);
+    if (user.owner && !user.id) return dispatch(req, client); // the owner
+    if (user.owner) {
+      // Full access: anything, as the owner. A project they create is listed as theirs
+      // and gets a folder in the owner's account (it runs as the owner, who must be able to write there).
+      if (req.method !== 'project.create') return dispatch(req, client);
+      const p = (req.params ?? {}) as { name?: string; rootPath?: string };
+      const rootPath = p.rootPath ?? ownFolder(user.name, String(p.name ?? ''));
+      const created = (await dispatch({ ...req, params: { ...p, rootPath } } as typeof req, client)) as Project;
+      db.prepare('UPDATE projects SET owner_id = ? WHERE id = ?').run(user.id, created.id);
+      return { ...created, ownerId: user.id };
+    }
     const p = (req.params ?? {}) as Params;
     const ok = allowed[req.method as keyof Methods];
     if (!ok || !ok(user, p)) throw new Error(`not allowed: ${req.method}`);

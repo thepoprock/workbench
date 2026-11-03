@@ -58,10 +58,11 @@ export class Users {
     return null;
   }
 
-  // The Mac account a project runs as; null when it is the owner's (run as the hub).
+  // The Mac account a project runs as; null when it runs as the owner (the hub's account):
+  // the owner's own projects, and those of a user with full access, who works as the owner.
   accountFor(projectId: string | null): string | null {
     if (!projectId) return null;
-    const r = this.db.prepare('SELECT u.account FROM projects p JOIN users u ON u.id = p.owner_id WHERE p.id = ?').get(projectId) as
+    const r = this.db.prepare('SELECT u.account FROM projects p JOIN users u ON u.id = p.owner_id WHERE p.id = ? AND u.full_access = 0').get(projectId) as
       | { account: string }
       | undefined;
     return r && r.account !== this.me ? r.account : null;
