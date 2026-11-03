@@ -73,6 +73,9 @@ const logPath = (id: string) => join(scrollbackDir, `${id}.log`);
 // What must never reach another account's session: the owner's Claude logins.
 const OWNER_SECRETS = /^(CLAUDE_CONFIG_DIR|CLAUDE_CODE_OAUTH_TOKEN|ANTHROPIC_[A-Z_]+)$/;
 
+// wb and claude for every account (see userAccess.ts), whatever their own profile says.
+const SHARED_BIN = `${process.env.WORKBENCH_PUBLIC_DIR ?? '/Users/Shared/workbench'}/bin`;
+
 // The same command, run as `account` through sudo: their home, their login shell's PATH,
 // their Claude login. sudo drops the hub's environment; what the session needs (hook
 // address and token) is passed on explicitly.
@@ -80,7 +83,7 @@ function asAccount(account: string, run: SpawnSpec): { file: string; args: strin
   const env = Object.entries({ TERM: 'xterm-256color', COLORTERM: 'truecolor', ...run.env })
     .filter(([k]) => !OWNER_SECRETS.test(k))
     .map(([k, v]) => `${k}=${v}`);
-  return { file: SUDO, args: ['-n', '-u', account, '-H', '--', '/usr/bin/env', ...env, '/bin/zsh', '-l', '-c', 'exec "$@"', 'zsh', run.file, ...run.args] };
+  return { file: SUDO, args: ['-n', '-u', account, '-H', '--', '/usr/bin/env', ...env, '/bin/zsh', '-l', '-c', `export PATH="${SHARED_BIN}:$PATH"; exec "$@"`, 'zsh', run.file, ...run.args] };
 }
 
 // The hub can't signal a session running as another account: its PTY holds sudo, which

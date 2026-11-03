@@ -1,9 +1,9 @@
 // How other users on this Mac find the hub: its port (not its key; each has their own,
 // in ~/.workbench-key) in a folder every account can read, and the `wb` command there.
-import { chmodSync, existsSync, mkdirSync, writeFileSync } from 'node:fs';
+import { chmodSync, existsSync, mkdirSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { isWindows } from './platform.ts';
+import { isWindows, which } from './platform.ts';
 
 export const PUBLIC_DIR = process.env.WORKBENCH_PUBLIC_DIR ?? '/Users/Shared/workbench';
 // A stable node path: the hub's own may be a versioned Homebrew folder that an upgrade removes.
@@ -20,6 +20,13 @@ export function publishForUsers(port: number): void {
       const shim = join(PUBLIC_DIR, 'bin', 'wb');
       writeFileSync(shim, `#!/bin/sh\nexec "${NODE}" "${WB}" "$@"\n`, { mode: 0o755 });
       chmodSync(shim, 0o755);
+    }
+    // claude too, for accounts whose own setup doesn't have it (sessions run as them put this folder on PATH).
+    const claude = which('claude');
+    if (claude) {
+      const link = join(PUBLIC_DIR, 'bin', 'claude');
+      rmSync(link, { force: true });
+      symlinkSync(claude, link);
     }
   } catch (err) {
     console.log(`${new Date().toISOString()} [hub] can't publish to ${PUBLIC_DIR}: ${(err as Error).message}`);
