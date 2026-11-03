@@ -45,6 +45,10 @@ body {
 }
 .section-label.with-action button:hover:not(:disabled) { color: var(--text); background: #1e222b; }
 .section-label.with-action button.sort-toggle { font-size: 10px; letter-spacing: .06em; text-transform: uppercase; padding: 2px 6px; }
+.section-label .fold { cursor: pointer; user-select: none; }
+.section-label .fold:hover { color: var(--text); }
+.section-label .section-actions { display: flex; gap: 2px; }
+.list.shared .dot { margin-right: 6px; }
 
 .list { list-style: none; margin: 0; padding: 0; overflow-y: auto; }
 .sidebar > * { flex-shrink: 0; }

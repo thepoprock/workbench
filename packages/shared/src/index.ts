@@ -39,6 +39,20 @@ export interface Project {
   archived: boolean;
 }
 
+// Another account's Workbench on this Mac, as its summary shows it (see hub/src/share.ts).
+export interface SharedWorkbench {
+  owner: string; // whose it is, e.g. "Haven"
+  updatedAt: number;
+  running: boolean; // its hub rewrote the summary recently
+  projects: {
+    id: string;
+    name: string;
+    rootPath: string | null;
+    lastActiveAt: number;
+    running: { title: string; kind: SessionKind; state: AgentState | null }[];
+  }[];
+}
+
 export type TermStatus = 'running' | 'exited' | 'lost';
 export type SessionKind = 'terminal' | 'agent';
 
@@ -401,6 +415,7 @@ export interface Methods {
   'project.archive': { params: { id: string; archived: boolean }; result: Project };
   // Sidebar order (drag to sort): ids in the order wanted; projects not listed follow, by name.
   'project.reorder': { params: { ids: string[] }; result: null };
+  'shared.workbenches': { params: Empty; result: SharedWorkbench[] }; // other accounts' projects, read-only
 
   // Terminals. The hub owns the PTY; clients attach/detach freely.
   'term.create': { params: { projectId: string; cwd?: string; cols: number; rows: number }; result: TermSession };

@@ -22,6 +22,7 @@ import type { Harnesses } from './harnesses.ts';
 import type { Terminals } from './terminals.ts';
 import { codexHistory } from './codexhistory.ts';
 import type { JobMailWatch } from './jobmail.ts';
+import { readShared } from './share.ts';
 import { createJournal, listJournals, renameJournal } from './journal.ts';
 import { deleteRecording, fileRecording, listJournalEntries, listRecordings, readRecordingAudio, saveRecordingText, type Voice } from './voice.ts';
 
@@ -55,6 +56,14 @@ const toProject = (r: ProjectRow): Project => ({
   lastActiveAt: r.last_active ?? r.created_at,
   archived: r.archived === 1,
 });
+
+export function listProjects(db: DB, includeArchived: boolean): Project[] {
+  return (
+    db
+      .prepare(`SELECT *, ${LAST_ACTIVE} FROM projects ${includeArchived ? '' : 'WHERE archived = 0'} ORDER BY sort_order IS NULL, sort_order, name COLLATE NOCASE`)
+      .all() as unknown as ProjectRow[]
+  ).map(toProject);
+}
 
 export function readProject(db: DB, id: string): Project | null {
   const row = db.prepare(`SELECT *, ${LAST_ACTIVE} FROM projects WHERE id = ?`).get(id) as ProjectRow | undefined;
@@ -242,12 +251,8 @@ export function makeDispatch(
 
     'hub.ping': () => ({ now: Date.now() }),
 
-    'project.list': ({ includeArchived }) =>
-      (
-        db
-          .prepare(`SELECT *, ${LAST_ACTIVE} FROM projects ${includeArchived ? '' : 'WHERE archived = 0'} ORDER BY sort_order IS NULL, sort_order, name COLLATE NOCASE`)
-          .all() as unknown as ProjectRow[]
-      ).map(toProject),
+    'project.list': ({ includeArchived }) => listProjects(db, !!includeArchived),
+    'shared.workbenches': () => readShared(),
 
     'project.create': ({ name, rootPath }) => createProject(name, rootPath),
 

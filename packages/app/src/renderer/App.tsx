@@ -13,7 +13,7 @@ import { McpManager } from './McpManager.tsx';
 import { Organize } from './Organize.tsx';
 import { putSessions, statusClass, useProjectSessions, useRunningSessions } from './sessions.ts';
 import { hub } from './hub.ts';
-import { Projects } from './Projects.tsx';
+import { Projects, SharedProjects } from './Projects.tsx';
 import { openChangelog, openClaudeFiles, openErrors, openHistory, openJobMail, openJournal, openProject, openRecordings, openRemote, openTerminal, replaceTerminal } from './dock.ts';
 import { Elsewhere } from './Elsewhere.tsx';
 import { Search } from './Search.tsx';
@@ -182,6 +182,23 @@ export function App() {
       }),
     [refresh],
   );
+
+  // Starting a session or sending a prompt makes a project the most recent one; the hub
+  // says so only as a session update, so the list is reloaded then, at most every few seconds.
+  useEffect(() => {
+    let due: ReturnType<typeof setTimeout> | null = null;
+    const off = hub.onPush((p) => {
+      if (p.event !== 'term.update' || due) return;
+      due = setTimeout(() => {
+        due = null;
+        void hub.call('project.list', { includeArchived: true }).then(setProjects, () => {});
+      }, 3000);
+    });
+    return () => {
+      off();
+      if (due) clearTimeout(due);
+    };
+  }, []);
 
   // Sessions for the selected project; the store follows term.update pushes.
   const sessions = useProjectSessions(current?.id ?? null);
@@ -450,6 +467,7 @@ export function App() {
             📁
           </button>
         </form>
+        <SharedProjects />
 
         {current && (
           <Agents

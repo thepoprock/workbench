@@ -16,6 +16,7 @@ import { Harnesses } from './harnesses.ts';
 import { Voice } from './voice.ts';
 import { Haven } from './haven.ts';
 import { JobMailWatch } from './jobmail.ts';
+import { startSharing } from './share.ts';
 
 const VERSION = '0.0.1';
 
@@ -65,6 +66,7 @@ async function main(): Promise<void> {
     "INSERT OR IGNORE INTO harnesses (id, type, name, created_at) VALUES (?, 'claude-code', 'Claude Code', ?)",
   ).run(HARNESS_ID, Date.now());
   const claude = new ClaudeHarness(terms, () => server?.port ?? 0);
+  startSharing(db, terms);
   // Every Claude account's transcripts are searchable (harnesses is created below).
   let harnessesRef: Harnesses | null = null;
   const history = new History(db, () =>
