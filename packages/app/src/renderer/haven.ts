@@ -18,6 +18,8 @@ interface View extends HavenState {
   unread: boolean;
   notice: string | null;
   autoPlay: boolean; // whether to play new replies without clicking
+  older: HavenMessage[]; // fetched by scrolling back, before `messages`
+  more: boolean; // older ones exist that haven't been fetched
 }
 
 const AUTO_PLAY_KEY = 'haven.autoPlay';
@@ -36,6 +38,8 @@ let view: View = {
   unread: false,
   notice: null,
   autoPlay: localStorage.getItem(AUTO_PLAY_KEY) === 'on',
+  older: [],
+  more: true,
 };
 const listeners = new Set<() => void>();
 const set = (patch: Partial<View>) => {
@@ -175,3 +179,19 @@ export function setAutoPlay(on: boolean): void {
 }
 
 export const clearNotice = () => set({ notice: null });
+
+// The page before the oldest message on screen. Resolves false when there is nothing older.
+let fetching: Promise<boolean> | null = null;
+export function loadOlder(): Promise<boolean> {
+  if (!view.more) return Promise.resolve(false);
+  fetching ??= (async () => {
+    const oldest = view.older[0] ?? view.messages[0];
+    if (!oldest) return false;
+    const { messages, more } = await hub.call('haven.history', { before: oldest.t });
+    set({ older: [...messages, ...view.older], more });
+    return messages.length > 0;
+  })().finally(() => {
+    fetching = null;
+  });
+  return fetching;
+}

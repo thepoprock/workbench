@@ -557,6 +557,7 @@ export interface Methods {
   'voice.saveText': { params: { id: string; text: string; journal?: JournalRef }; result: null }; // edit a transcript
   'voice.file': { params: { id: string; projectId: string | null }; result: null }; // move to a project
   'haven.state': { params: Empty; result: HavenState };
+  'haven.history': { params: { before: number; limit?: number }; result: { messages: HavenMessage[]; more: boolean } }; // scrolling back
   'haven.send': { params: { text: string }; result: null };
   'haven.speak': { params: { t: number }; result: { ready: number; done: boolean } };
   'haven.audio': { params: { t: number; part: number }; result: string }; // the .wav, base64

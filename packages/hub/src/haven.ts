@@ -1,5 +1,5 @@
 import { execFile, spawn, type ChildProcessWithoutNullStreams } from 'node:child_process';
-import { existsSync, mkdirSync, readdirSync, readFileSync, rmSync, statSync, writeFileSync } from 'node:fs';
+import { appendFileSync, existsSync, mkdirSync, readdirSync, readFileSync, rmSync, statSync, writeFileSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { join } from 'node:path';
 import readline from 'node:readline';
@@ -18,6 +18,11 @@ import { dataDir } from './paths.ts';
 const VOICE_DIR = process.env.WORKBENCH_HAVEN_VOICE_DIR ?? join(homedir(), 'haven-voice');
 const PYTHON = join(VOICE_DIR, '.venv', 'bin', 'python');
 const AUDIO_DIR = join(dataDir, 'haven-audio');
+// Every message shown here, kept for good: the chat page only hands out its recent
+// history, so this is what scrolling back reads. Only what this view shows (your words,
+// Haven's replies), one JSON line each.
+const HISTORY_FILE = join(dataDir, 'haven-history.jsonl');
+const HISTORY_PAGE = 50;
 const SHOWN = 200;                        // messages kept for clients
 const FAILURES_BEFORE_OFFLINE = 3;        // one slow check on a weak link is not an outage
 const REQUEST_MS = 30_000;
@@ -75,6 +80,8 @@ type Broadcast = <E extends keyof Pushes>(event: E, data: Pushes[E]) => void;
 export class Haven {
   private cfg: Settings | null = null;
   private messages: HavenMessage[] = [];
+  private history: HavenMessage[] = []; // everything kept, oldest first
+  private kept = new Set<number>();
   private seenUntil: number | null = null;   // null until the first look at the chat
   private inTurn = false;                    // someone spoke and the answer isn't finished
   private answered = false;
@@ -98,6 +105,7 @@ export class Haven {
 
   start(): void {
     mkdirSync(AUDIO_DIR, { recursive: true });
+    this.loadHistory();
     this.pruneAudio();
     execFile(PYTHON, ['-m', 'voice.workbench', 'settings'], { cwd: VOICE_DIR, env: ENV }, (err, stdout) => {
       if (err) return log(`no voice folder, Haven is off: ${err.message}`);
@@ -116,6 +124,36 @@ export class Haven {
 
   state(): HavenState {
     return { online: this.online, busy: this.busy, listening: !!this.ears, messages: this.messages };
+  }
+
+  // Older messages than `before`, newest last, and whether there are more still.
+  older(before: number, limit = HISTORY_PAGE): { messages: HavenMessage[]; more: boolean } {
+    const earlier = this.history.filter((m) => m.t < before);
+    return { messages: earlier.slice(-limit), more: earlier.length > limit };
+  }
+
+  private loadHistory(): void {
+    if (!existsSync(HISTORY_FILE)) return;
+    for (const line of readFileSync(HISTORY_FILE, 'utf8').split('\n')) {
+      const m = parsed<HavenMessage>(line);
+      if (m && !this.kept.has(m.t)) {
+        this.kept.add(m.t);
+        this.history.push(m);
+      }
+    }
+    this.history.sort((a, b) => a.t - b.t);
+  }
+
+  private keep(m: HavenMessage): void {
+    if (m.from === 'notice' || this.kept.has(m.t)) return;
+    this.kept.add(m.t);
+    this.history.push(m);
+    if (this.history.length > 1 && m.t < this.history[this.history.length - 2]!.t) this.history.sort((a, b) => a.t - b.t);
+    try {
+      appendFileSync(HISTORY_FILE, `${JSON.stringify(m)}\n`, { mode: 0o600 });
+    } catch (err) {
+      log(`can't keep a message: ${(err as Error).message}`);
+    }
   }
 
   private update(): void {
@@ -171,7 +209,9 @@ export class Haven {
     this.busy = busy;
     this.online = true;
     if (this.seenUntil === null) {
-      this.messages = all.flatMap((m) => this.shown(m, true)).slice(-SHOWN);
+      const seen = all.flatMap((m) => this.shown(m, true));
+      seen.forEach((m) => this.keep(m));
+      this.messages = seen.slice(-SHOWN);
       this.seenUntil = newest;
       // Picking up mid-answer, as after a restart: what follows still belongs to a
       // conversation. Quiet time starts this way too, but that's the rarer mistake.
@@ -202,6 +242,7 @@ export class Haven {
     if (replying || m.content.startsWith(RUNTIME_ERROR)) this.answered = true;
     const quiet = !(this.inTurn || this.cfg!.read_quiet_time);
     for (const message of this.shown(m, quiet)) {
+      this.keep(message);
       this.messages = [...this.messages, message].slice(-SHOWN);
       this.broadcast('haven.message', message);
       if (message.from === 'haven' && !quiet) this.queue(message, true);

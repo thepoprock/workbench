@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState, type FormEvent } from 'react';
 import type { HavenMessage } from '@workbench/shared';
 import { hub } from './hub.ts';
-import { clearNotice, onPhone, play, setAutoPlay, stopPlaying, useHaven } from './haven.ts';
+import { clearNotice, onPhone, play, setAutoPlay, stopPlaying, useHaven, loadOlder } from './haven.ts';
 import { micError, Recorder } from './voice.ts';
 
 const NAMES = { you: 'You', claude: 'Claude', haven: 'Haven', notice: '' };
@@ -47,6 +47,7 @@ export function HavenView({ onError }: { onError: (message: string) => void }) {
   const [hearing, setHearing] = useState(false);
   const recorder = useRef(new Recorder());
   const end = useRef<HTMLDivElement>(null);
+  const list = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     end.current?.scrollIntoView();
@@ -109,8 +110,25 @@ export function HavenView({ onError }: { onError: (message: string) => void }) {
           </label>
         </span>
       </div>
-      <div className="haven-messages">
-        {haven.messages.map((m) => (
+      <div
+        className="haven-messages"
+        ref={list}
+        onScroll={() => {
+          const box = list.current!;
+          if (box.scrollTop > 300 || !haven.more) return;
+          // Older messages go in above; keep what's on screen where it is.
+          const fromBottom = box.scrollHeight - box.scrollTop;
+          void loadOlder().then((added) => {
+            if (added) requestAnimationFrame(() => (box.scrollTop = box.scrollHeight - fromBottom));
+          });
+        }}
+      >
+        {haven.more && haven.messages.length > 0 && <div className="haven-older muted small">Scroll up for earlier messages</div>}
+        {!haven.more && <div className="haven-older muted small">Start of the conversation Workbench has</div>}
+        {haven.older.map((m) => (
+          <Message key={m.t} m={m} playing={haven.playing === m.t} />
+        ))}
+        {haven.messages.filter((m) => !haven.older.length || m.t > haven.older[haven.older.length - 1]!.t).map((m) => (
           <Message key={m.t} m={m} playing={haven.playing === m.t} />
         ))}
         <div ref={end} />

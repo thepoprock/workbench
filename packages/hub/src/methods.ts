@@ -535,6 +535,7 @@ export function makeDispatch(
       return null;
     },
     'haven.state': () => haven.state(),
+    'haven.history': ({ before, limit }) => haven.older(before, limit),
     'haven.send': async ({ text }) => {
       await haven.send(text);
       return null;
