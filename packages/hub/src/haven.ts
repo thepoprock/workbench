@@ -27,6 +27,9 @@ const HISTORY_PAGE = 50;
 const SHOWN = 200;                        // messages kept for clients
 const FAILURES_BEFORE_OFFLINE = 3;        // one slow check on a weak link is not an outage
 const REQUEST_MS = 30_000;
+const SLOW_CHECK_MS = 5_000;              // a check slower than this is logged
+const LATE_WAKE_MS = 30_000;              // a poll this late means the hub was suspended (the Mac slept)
+const SEND_FORGOTTEN_MS = 30 * 60_000;    // a send never seen in the chat by then is logged and dropped
 const REPLY_TIMEOUT_MS = 5 * 60_000;      // stop checking quickly if no answer comes
 const VOICE_IDLE_MS = 5 * 60_000;         // the voice model leaves memory after this
 const AUDIO_DAYS = 14;                    // old voice messages are rebuilt if played again
@@ -47,6 +50,17 @@ interface Visible {
   role: string;
   kind: string | null;
   content: string;
+  id: string | null; // set by a runtime that queues messages; older ones leave it out
+}
+
+// One of our sends, followed until its answer is seen, for the timing log. `id` comes back
+// from a runtime that queues; with an older one the message is matched by its text.
+interface Sent {
+  at: number;            // ms, our clock
+  id: string | null;
+  text: string;
+  seen: boolean;         // in the chat
+  readAt: number | null; // s, Haven's clock: when a model call first had it
 }
 
 interface Settings {
@@ -91,6 +105,7 @@ function visible(state: { messages?: Record<string, unknown>[] }): Visible[] {
       role: String(e.role),
       kind: (e.kind as string | null) ?? null,
       content: String(e.content ?? ''),
+      id: typeof e.id === 'string' ? e.id : null,
     }));
 }
 
@@ -131,7 +146,9 @@ export class Haven {
   private recordingSince: number | null = null; // a Workbench recording is taking audio
   private recordingQuiet: NodeJS.Timeout | null = null;
   private recordings: { from: number; to: number }[] = []; // ended ones, for turns that overlapped
-  private sentAt = 0;
+  private sends: Sent[] = [];
+  private failingSince = 0;
+  private queued = 0;
   private ears: ChildProcessWithoutNullStreams | null = null;
   private earsWanted = false; // Listen is on: a listener that dies by itself is started again
   private earsRestarts: number[] = []; // when it was restarted lately, to give up on a crash loop
@@ -203,13 +220,28 @@ export class Haven {
 
   async send(text: string): Promise<void> {
     if (!this.cfg) throw new Error('Haven is not set up on this machine');
-    const r = await fetch(`${this.cfg.url}/api/send`, {
-      method: 'POST',
-      body: JSON.stringify({ text }),
-      signal: AbortSignal.timeout(REQUEST_MS),
-    });
-    if (!r.ok) throw new Error(`Haven didn't take that (${r.status})`);
-    this.sentAt = Date.now();
+    let r: Response;
+    try {
+      r = await fetch(`${this.cfg.url}/api/send`, {
+        method: 'POST',
+        body: JSON.stringify({ text }),
+        signal: AbortSignal.timeout(REQUEST_MS),
+      });
+    } catch (err) {
+      log(`send failed: ${(err as Error).message}`);
+      throw new Error(`Couldn't reach Haven: ${(err as Error).message}`);
+    }
+    if (r.status === 409) {
+      log('send refused: Haven is paused');
+      throw new Error('Haven is paused, so that was not sent');
+    }
+    if (!r.ok) {
+      log(`send refused (${r.status})`);
+      throw new Error(`Haven didn't take that (${r.status})`);
+    }
+    const reply = (await r.json().catch(() => ({}))) as { id?: string; queued?: number };
+    this.sends.push({ at: Date.now(), id: reply.id ?? null, text, seen: false, readAt: null });
+    if ((reply.queued ?? 0) > 1) log(`sent: ${reply.queued! - 1} message(s) waiting ahead of it`);
     this.expectingUntil = Date.now() + REPLY_TIMEOUT_MS;
     this.wake?.();
   }
@@ -217,27 +249,85 @@ export class Haven {
   private async loop(): Promise<void> {
     while (!this.stopped) {
       await this.check();
-      const fast = this.busy || Date.now() < this.expectingUntil;
+      const fast = this.busy || this.queued > 0 || Date.now() < this.expectingUntil;
       const seconds = fast ? this.cfg!.poll_waiting_sec : this.cfg!.poll_idle_sec;
+      const began = Date.now();
       await new Promise<void>((resolve) => {
         const timer = setTimeout(resolve, seconds * 1000);
         this.wake = () => (clearTimeout(timer), resolve());
       });
+      const late = Date.now() - began - seconds * 1000;
+      if (late > LATE_WAKE_MS) log(`check: ran ${Math.round(late / 1000)}s late, the hub was suspended (the Mac slept?)`);
     }
   }
 
   private async check(): Promise<void> {
+    const began = Date.now();
     try {
       const r = await fetch(`${this.cfg!.url}/api/state`, { signal: AbortSignal.timeout(REQUEST_MS) });
-      const raw = (await r.json()) as { busy?: boolean; messages?: Record<string, unknown>[] };
+      if (!r.ok) throw new Error(`HTTP ${r.status}`);
+      const raw = (await r.json()) as {
+        busy?: boolean;
+        messages?: Record<string, unknown>[];
+        queued?: number;
+        delivered?: Record<string, number>;
+      };
+      const took = Date.now() - began;
+      if (took > SLOW_CHECK_MS) log(`check: slow, ${took}ms`);
+      if (this.failures) {
+        log(`check: working again after ${this.failures} failed check(s) over ${Math.round((Date.now() - this.failingSince) / 1000)}s`);
+      }
       this.failures = 0;
+      const queued = raw.queued ?? 0;
+      if (queued !== this.queued) log(`queue: ${queued} message(s) waiting for Haven`);
+      this.queued = queued;
+      this.read(raw.delivered ?? {});
       this.absorb(!!raw.busy, visible(raw));
-    } catch {
-      if (++this.failures >= FAILURES_BEFORE_OFFLINE && this.online) {
+      this.forget();
+    } catch (err) {
+      if (!this.failures++) {
+        this.failingSince = began;
+        log(`check failed after ${Date.now() - began}ms: ${(err as Error).message}`);
+      }
+      if (this.failures >= FAILURES_BEFORE_OFFLINE && this.online) {
+        log(`offline: ${this.failures} checks in a row failed`);
         this.online = false;
         this.update();
       }
     }
+  }
+
+  // When a model call first had each of our sends (runtimes that queue report this).
+  private read(delivered: Record<string, number>): void {
+    for (const s of this.sends) if (s.id && s.readAt === null && delivered[s.id]) s.readAt = delivered[s.id]!;
+  }
+
+  private forget(): void {
+    const old = this.sends.filter((s) => !s.seen && Date.now() - s.at > SEND_FORGOTTEN_MS);
+    for (const s of old) log(`send from ${Math.round((Date.now() - s.at) / 60_000)} min ago never showed up in Haven's chat`);
+    if (old.length) this.sends = this.sends.filter((s) => !old.includes(s));
+  }
+
+  // The answer to each of our sends that Haven has read: timed from its own send.
+  private timeReply(m: Visible): void {
+    const answered = this.sends.filter((s) => s.seen && s.readAt !== null && s.readAt <= m.t);
+    for (const s of answered) {
+      const sent = s.at / 1000;
+      log(
+        `reply: waited ${Math.max(0, Math.round(s.readAt! - sent))}s for Haven to read it, ` +
+          `written ${Math.round(m.t - s.readAt!)}s after; seen here ${Math.round(Date.now() / 1000 - sent)}s after the send`,
+      );
+    }
+    this.sends = this.sends.filter((s) => !answered.includes(s));
+  }
+
+  // Our send showing up in the chat. Without an id (an older runtime) it is matched by
+  // text, and showing up is when Haven started on it.
+  private arrived(m: Visible): void {
+    const s = this.sends.find((x) => !x.seen && (m.id ? x.id === m.id : x.text === m.content));
+    if (!s) return;
+    s.seen = true;
+    if (!m.id) s.readAt = m.t;
   }
 
   // A reply counts only inside a turn someone started. That is how quiet time is told
@@ -276,12 +366,13 @@ export class Haven {
   }
 
   private take(m: Visible): void {
-    if (m.role === 'user') [this.inTurn, this.answered] = [true, false];
-    const replying = m.role === 'assistant' && !!m.content && m.kind !== 'note';
-    if ((replying || m.content.startsWith(RUNTIME_ERROR)) && this.inTurn && !this.answered && this.sentAt) {
-      // Haven's clock: how long they took. Ours: how long until this hub saw it.
-      log(`reply: Haven wrote it ${Math.round(m.t - this.sentAt / 1000)}s after the send; seen here ${Math.round((Date.now() - this.sentAt) / 1000)}s after`);
+    if (m.role === 'user') {
+      [this.inTurn, this.answered] = [true, false];
+      this.arrived(m);
     }
+    const replying = m.role === 'assistant' && !!m.content && m.kind !== 'note';
+    // Haven's clock for when they read it and wrote back; ours for when this hub saw it.
+    if (replying || m.content.startsWith(RUNTIME_ERROR)) this.timeReply(m);
     if (replying || m.content.startsWith(RUNTIME_ERROR)) this.answered = true;
     const quiet = !(this.inTurn || this.cfg!.read_quiet_time);
     for (const message of this.shown(m, quiet)) {
