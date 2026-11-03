@@ -20,9 +20,10 @@ interface Row {
   key_hash: string;
   created_at: number;
   claude_harness: string | null;
+  full_access: number;
 }
 
-const toUser = (r: Row): WorkbenchUser => ({ id: r.id, name: r.name, account: r.account, createdAt: r.created_at, claudeAccount: r.claude_harness });
+const toUser = (r: Row): WorkbenchUser => ({ id: r.id, name: r.name, account: r.account, createdAt: r.created_at, claudeAccount: r.claude_harness, fullAccess: r.full_access === 1 });
 
 // In their account: the token their Claude signs in with, and the line in ~/.zprofile that
 // reads it, so Claude started over SSH uses it too. Never on a command line, where any
@@ -51,7 +52,8 @@ export class Users {
     const given = Buffer.from(hash(key));
     for (const r of this.db.prepare('SELECT * FROM users').all() as unknown as Row[]) {
       const want = Buffer.from(r.key_hash);
-      if (want.length === given.length && timingSafeEqual(want, given)) return { id: r.id, name: r.name, owner: false };
+      // Full access: no limits, the same as the owner (their sessions run as the owner).
+      if (want.length === given.length && timingSafeEqual(want, given)) return { id: r.id, name: r.name, owner: r.full_access === 1 };
     }
     return null;
   }
@@ -78,6 +80,12 @@ export class Users {
     const id = randomUUID();
     this.db.prepare('INSERT INTO users (id, name, account, key_hash, created_at) VALUES (?, ?, ?, ?, ?)').run(id, name.trim(), account, '', Date.now());
     return { ...this.get(id), ...(await this.newKey(id)) };
+  }
+
+  setFull(id: string, full: boolean): WorkbenchUser {
+    this.get(id);
+    this.db.prepare('UPDATE users SET full_access = ? WHERE id = ?').run(full ? 1 : 0, id);
+    return this.get(id);
   }
 
   rename(id: string, name: string): WorkbenchUser {

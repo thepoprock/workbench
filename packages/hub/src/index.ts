@@ -151,7 +151,7 @@ async function main(): Promise<void> {
     const p = readProject(db, id);
     if (p) server?.broadcast({ event: 'project.update', data: p });
   };
-  const userMethods: Record<string, (p: Record<string, string>, client: Parameters<Dispatch>[1]) => unknown> = {
+  const userMethods: Record<string, (p: Record<string, string> & { full?: boolean }, client: Parameters<Dispatch>[1]) => unknown> = {
     'user.me': (_, client) => client.user,
     'user.list': () => Promise.all(users.list().map(async (u) => ({ ...u, ...(await users.check(u.id)) }))),
     'user.add': ({ name, account }) => users.add(name, account),
@@ -165,6 +165,7 @@ async function main(): Promise<void> {
     },
     'user.newKey': ({ id }) => users.newKey(id),
     'user.check': ({ id }) => users.check(id),
+    'user.setFull': ({ id, full }) => users.setFull(id, !!full),
     'user.setClaude': async ({ id, harnessId }) => {
       if (!harnessId) return users.setClaude(id, null, null);
       const h = harnesses.get(harnessId);

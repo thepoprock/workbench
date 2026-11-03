@@ -121,7 +121,7 @@ async function main([cmd, ...args]) {
   try {
     if (cmd === 'me') {
       const me = await hub.call('user.me', {});
-      console.log(me.owner ? `${me.name} (owner)` : me.name);
+      console.log(me.owner ? `${me.name} (${me.id ? 'full access' : 'owner'})` : me.name);
     } else if (cmd === 'projects') for (const p of await hub.call('project.list', {})) console.log(`${p.id}  ${p.name}  ${p.rootPath ?? ''}`);
     else if (cmd === 'new') {
       if (!args[0]) throw new Error('wb new <name> [folder]');

@@ -48,6 +48,7 @@ export interface WorkbenchUser {
   account: string; // Mac account their projects run as
   createdAt: number;
   claudeAccount: string | null; // one of the owner's token accounts their Claude runs on; null: their own login
+  fullAccess: boolean; // works as the owner does: every project, sessions run as the owner's account
 }
 export interface UserCheck {
   canRun: boolean; // Workbench may start programs as their account (the admin rule is in place)
@@ -57,7 +58,7 @@ export interface UserCheck {
 export interface Me {
   id: string | null; // null: the owner
   name: string;
-  owner: boolean;
+  owner: boolean; // the owner, or a user with full access: no limits apply
 }
 
 export type TermStatus = 'running' | 'exited' | 'lost';
@@ -431,6 +432,7 @@ export interface Methods {
   'user.remove': { params: { id: string }; result: null }; // their projects are archived
   'user.newKey': { params: { id: string }; result: UserCheck }; // the old key stops working
   'user.check': { params: { id: string }; result: UserCheck };
+  'user.setFull': { params: { id: string; full: boolean }; result: WorkbenchUser }; // takes effect on their next connection
   'user.setClaude': { params: { id: string; harnessId: string | null }; result: WorkbenchUser }; // a token account, or null
 
   // Terminals. The hub owns the PTY; clients attach/detach freely.

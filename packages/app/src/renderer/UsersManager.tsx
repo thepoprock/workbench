@@ -44,6 +44,15 @@ export function UsersManager({ onClose }: { onClose: () => void }) {
         <span className="hm-name">
           {u.name} <span className="muted small">Mac account {u.account}</span>
         </span>
+        <label className="small users-claude" title="Full access: they see every project and their sessions run as you — your Claude login, memory and files. Takes effect on their next connection.">
+          <input
+            type="checkbox"
+            checked={u.fullAccess}
+            disabled={busy}
+            onChange={(e) => void run(() => hub.call('user.setFull', { id: u.id, full: e.target.checked }))}
+          />{' '}
+          Full access — works as you (every project, your Claude and memory)
+        </label>
         <label className="small users-claude" title="Claude in their projects signs in with this account's token (a setup-token on your subscription)">
           Claude:{' '}
           <select

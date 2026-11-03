@@ -236,4 +236,7 @@ export const migrations: string[] = [
 
   // 14 — a user's Claude runs on one of the owner's token accounts (NULL: their own login)
   `ALTER TABLE users ADD COLUMN claude_harness TEXT;`,
+
+  // 15 — full access: a user who works as the owner does (every project, run as the owner)
+  `ALTER TABLE users ADD COLUMN full_access INTEGER NOT NULL DEFAULT 0;`,
 ];
