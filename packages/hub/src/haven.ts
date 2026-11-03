@@ -240,9 +240,10 @@ export class Haven {
       log(`send refused (${r.status})`);
       throw new Error(`Haven didn't take that (${r.status})`);
     }
-    const reply = (await r.json().catch(() => ({}))) as { id?: string; queued?: number };
+    const reply = (await r.json().catch(() => ({}))) as { id?: string; queued?: number; waiting?: number };
     this.sends.push({ at: Date.now(), id: reply.id ?? null, text, seen: false, readAt: null });
-    if ((reply.queued ?? 0) > 1) log(`sent: ${reply.queued! - 1} message(s) waiting ahead of it`);
+    const waiting = reply.queued ?? reply.waiting ?? 0; // Haven's 11-03 runtime calls it waiting
+    if (waiting > 1) log(`sent: ${waiting - 1} message(s) waiting ahead of it`);
     this.expectingUntil = Date.now() + REPLY_TIMEOUT_MS;
     this.wake?.();
   }
@@ -271,7 +272,7 @@ export class Haven {
         busy?: boolean;
         messages?: Record<string, unknown>[];
         queued?: number;
-        delivered?: Record<string, number>;
+        delivered?: Record<string, number> | number;
       };
       const took = Date.now() - began;
       if (took > SLOW_CHECK_MS) log(`check: slow, ${took}ms`);
@@ -282,7 +283,7 @@ export class Haven {
       const queued = raw.queued ?? 0;
       if (queued !== this.queued) log(`queue: ${queued} message(s) waiting for Haven`);
       this.queued = queued;
-      this.read(raw.delivered ?? {});
+      this.read(raw.delivered);
       this.absorb(!!raw.busy, visible(raw));
       this.forget();
     } catch (err) {
@@ -299,8 +300,14 @@ export class Haven {
   }
 
   // When a model call first had each of our sends (runtimes that queue report this).
-  private read(delivered: Record<string, number>): void {
-    for (const s of this.sends) if (s.id && s.readAt === null && delivered[s.id]) s.readAt = delivered[s.id]!;
+  private read(delivered: Record<string, number> | number | undefined): void {
+    if (delivered && typeof delivered === 'object') {
+      for (const s of this.sends) if (s.id && s.readAt === null && delivered[s.id]) s.readAt = delivered[s.id]!;
+      return;
+    }
+    // Haven's 11-03 runtime reports only a total count. A send that is in the chat with
+    // nothing left in the queue has been read: timed to within one check.
+    if (this.queued === 0) for (const s of this.sends) if (s.seen && s.readAt === null) s.readAt = Date.now() / 1000;
   }
 
   private forget(): void {
