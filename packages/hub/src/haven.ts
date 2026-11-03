@@ -98,6 +98,8 @@ export class Haven {
   private speaking: { t: number; auto: boolean; ready: number } | null = null;
 
   private ears: ChildProcessWithoutNullStreams | null = null;
+  private earsWanted = false; // Listen is on: a listener that dies by itself is started again
+  private earsRestarts: number[] = []; // when it was restarted lately, to give up on a crash loop
   private headphonesAt = 0;
   private headphones = false;
 
@@ -119,7 +121,8 @@ export class Haven {
     this.stopped = true;
     this.wake?.();
     this.speaker?.kill();
-    this.ears?.kill();
+    this.earsWanted = false;
+    this.stopEars();
   }
 
   state(): HavenState {
@@ -352,17 +355,51 @@ export class Haven {
   // Hands-free ---------------------------------------------------------------
 
   setListening(on: boolean): void {
+    this.earsWanted = on;
     if (on === !!this.ears) return;
-    if (!on) return void this.ears?.kill();
-    const child = spawn(PYTHON, ['-m', 'voice.workbench', 'listen'], { cwd: VOICE_DIR, env: ENV });
+    if (!on) return this.stopEars();
+    // Its own process group, so stopping it also stops the recorder and speech engine it runs.
+    const child = spawn(PYTHON, ['-m', 'voice.workbench', 'listen'], { cwd: VOICE_DIR, env: ENV, detached: true });
     child.stderr.on('data', (d: Buffer) => log(`listen: ${d.toString().trim().slice(0, 200)}`));
     readline.createInterface({ input: child.stdout }).on('line', (line) => this.onHeard(line));
-    child.on('exit', () => {
-      if (this.ears === child) this.ears = null;
+    child.on('exit', (code, signal) => {
+      if (this.ears !== child) return;
+      this.ears = null;
+      // Whatever it left running (a recorder can ignore a polite stop); after its closing tone.
+      setTimeout(() => {
+        try {
+          process.kill(-child.pid!, 'SIGKILL');
+        } catch {
+          // nothing left
+        }
+      }, 1500);
+      if (this.earsWanted && !this.stopped) {
+        log(`listening stopped by itself (${signal ?? `exit ${code}`})`);
+        const now = Date.now();
+        this.earsRestarts = this.earsRestarts.filter((t) => now - t < 10 * 60_000);
+        if (this.earsRestarts.length < 3) {
+          this.earsRestarts.push(now);
+          this.broadcast('haven.notice', { text: 'Listening stopped by itself — starting it again.' });
+          setTimeout(() => this.earsWanted && !this.ears && this.setListening(true), 2000);
+        } else {
+          this.earsWanted = false;
+          this.broadcast('haven.notice', { text: 'Listening keeps stopping, so it is off. Turn Listen on to try again.' });
+        }
+      }
       this.update();
     });
     this.ears = child;
     this.update();
+  }
+
+  private stopEars(): void {
+    const child = this.ears;
+    if (!child) return;
+    try {
+      process.kill(-child.pid!, 'SIGTERM'); // the listener and everything it started
+    } catch {
+      child.kill();
+    }
   }
 
   private onHeard(line: string): void {
