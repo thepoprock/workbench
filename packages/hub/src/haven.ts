@@ -5,6 +5,7 @@ import { join } from 'node:path';
 import readline from 'node:readline';
 import type { HavenMessage, HavenState, Pushes } from '@workbench/shared';
 import { dataDir } from './paths.ts';
+import type { Client } from './server.ts';
 
 // Haven's chat as its own place in Workbench, for every client at once: one link to
 // their chat page, and each reply also as a voice message.
@@ -30,6 +31,11 @@ const REPLY_TIMEOUT_MS = 5 * 60_000;      // stop checking quickly if no answer 
 const VOICE_IDLE_MS = 5 * 60_000;         // the voice model leaves memory after this
 const AUDIO_DAYS = 14;                    // old voice messages are rebuilt if played again
 const HEADPHONES_CACHE_MS = 15_000;
+const RECORDING_QUIET_MS = 3_000;         // no audio for this long: the recording is over (a client that vanished)
+const RECORDINGS_KEPT_MS = 10 * 60_000;   // how far back a heard turn is checked against recordings
+const ECHO_WINDOW_MS = 10 * 60_000;       // a reply heard back within this long is the mic hearing the speaker
+const ECHO_SHARE = 0.5;                   // this share of the heard word triples found in one reply
+const ECHO_MIN_WORDS = 4;
 const SYSTEM_PROFILER = '/usr/sbin/system_profiler'; // by full path: a launched app's PATH leaves out /usr/sbin
 const RUNTIME_ERROR = '[Runtime error';
 const NO_MODEL = "Haven can't reach their model right now.";
@@ -52,6 +58,30 @@ interface Settings {
 }
 
 const log = (m: string) => console.log(`${new Date().toISOString()} [haven] ${m}`);
+
+const words = (text: string) => text.toLowerCase().replace(/[^\p{L}\p{N}\s']/gu, ' ').split(/\s+/).filter(Boolean);
+const triples = (w: string[]) => new Set(w.slice(2).map((_, i) => `${w[i]} ${w[i + 1]} ${w[i + 2]}`));
+
+// How much of `heard` is word for word in `said`: 1 when every run of three words is.
+export function echoShare(heard: string, said: string): number {
+  const h = triples(words(heard));
+  if (!h.size) return 0;
+  const s = triples(words(said));
+  let found = 0;
+  for (const t of h) if (s.has(t)) found++;
+  return found / h.size;
+}
+
+interface Heard {
+  event: string;
+  text?: string;
+  why?: string;
+  started?: number; // epoch seconds: the turn as the listener heard it
+  ended?: number;
+  voiced?: number;
+  transcribe_ms?: number;
+  sure?: number;
+}
 
 function visible(state: { messages?: Record<string, unknown>[] }): Visible[] {
   return (state.messages ?? [])
@@ -97,6 +127,11 @@ export class Haven {
   private jobs: { t: number; auto: boolean; text: string }[] = [];
   private speaking: { t: number; auto: boolean; ready: number } | null = null;
 
+  private players = new Set<Client>(); // clients playing a reply now: the mic is off while any is
+  private recordingSince: number | null = null; // a Workbench recording is taking audio
+  private recordingQuiet: NodeJS.Timeout | null = null;
+  private recordings: { from: number; to: number }[] = []; // ended ones, for turns that overlapped
+  private sentAt = 0;
   private ears: ChildProcessWithoutNullStreams | null = null;
   private earsWanted = false; // Listen is on: a listener that dies by itself is started again
   private earsRestarts: number[] = []; // when it was restarted lately, to give up on a crash loop
@@ -174,6 +209,7 @@ export class Haven {
       signal: AbortSignal.timeout(REQUEST_MS),
     });
     if (!r.ok) throw new Error(`Haven didn't take that (${r.status})`);
+    this.sentAt = Date.now();
     this.expectingUntil = Date.now() + REPLY_TIMEOUT_MS;
     this.wake?.();
   }
@@ -242,6 +278,10 @@ export class Haven {
   private take(m: Visible): void {
     if (m.role === 'user') [this.inTurn, this.answered] = [true, false];
     const replying = m.role === 'assistant' && !!m.content && m.kind !== 'note';
+    if ((replying || m.content.startsWith(RUNTIME_ERROR)) && this.inTurn && !this.answered && this.sentAt) {
+      // Haven's clock: how long they took. Ours: how long until this hub saw it.
+      log(`reply: Haven wrote it ${Math.round(m.t - this.sentAt / 1000)}s after the send; seen here ${Math.round((Date.now() - this.sentAt) / 1000)}s after`);
+    }
     if (replying || m.content.startsWith(RUNTIME_ERROR)) this.answered = true;
     const quiet = !(this.inTurn || this.cfg!.read_quiet_time);
     for (const message of this.shown(m, quiet)) {
@@ -296,10 +336,12 @@ export class Haven {
     if (this.speaking) return;
     const job = this.jobs.shift();
     if (!job) {
-      this.speakerIdle ??= setTimeout(() => {
+      const idle = () => {
+        if (this.ears) return void (this.speakerIdle = setTimeout(idle, VOICE_IDLE_MS)); // listening: a reply is coming, keep it warm
         this.speakerIdle = null;
         this.speaker?.kill();
-      }, VOICE_IDLE_MS);
+      };
+      this.speakerIdle ??= setTimeout(idle, VOICE_IDLE_MS);
       return;
     }
     if (this.speakerIdle) clearTimeout(this.speakerIdle);
@@ -389,7 +431,12 @@ export class Haven {
       this.update();
     });
     this.ears = child;
+    this.tellEars({ playing: this.players.size > 0, dictating: this.recordingSince !== null });
     this.update();
+  }
+
+  private tellEars(command: Record<string, unknown>): void {
+    if (this.ears?.stdin.writable) this.ears.stdin.write(`${JSON.stringify(command)}\n`);
   }
 
   private stopEars(): void {
@@ -403,19 +450,66 @@ export class Haven {
   }
 
   private onHeard(line: string): void {
-    const e = parsed<{ event: string; text?: string }>(line);
+    const e = parsed<Heard>(line);
     if (!e) return;
     if (e.event === 'heard') {
+      const took = e.ended ? `spoke ${(e.ended - (e.started ?? e.ended)).toFixed(1)}s (${e.voiced}s voiced), transcribed in ${e.transcribe_ms}ms, sent ${(Date.now() / 1000 - e.ended).toFixed(1)}s after the pause` : 'no timings';
+      const why = this.notForHaven(e);
+      log(`heard: ${took}${why ? ` — not sent: ${why}` : ''}`); // timings only: speech is never logged
+      if (why) return;
       this.send(e.text!).catch((err) => this.broadcast('haven.notice', { text: (err as Error).message }));
-    } else if (e.event === 'stop-playback') this.broadcast('haven.control', { action: 'stop' });
+    } else if (e.event === 'dropped') log(`heard: dropped (${e.why}, sure ${e.sure}, ${e.voiced}s voiced)`);
+    else if (e.event === 'stop-playback') this.broadcast('haven.control', { action: 'stop' });
     else if (e.event === 'repeat') this.broadcast('haven.control', { action: 'repeat' });
     else if (e.event === 'notice' || e.event === 'problem') this.broadcast('haven.notice', { text: e.text ?? '' });
     else if (e.event === 'quit') this.setListening(false);
   }
 
+  // The last checks before a heard turn goes to Haven. The listener is already deaf during
+  // recordings and replies; these catch what got past it.
+  private notForHaven(e: Heard): string | null {
+    if (e.started && e.ended) {
+      const [from, to] = [e.started * 1000, e.ended * 1000];
+      const live = this.recordingSince !== null && this.recordingSince <= to;
+      if (live || this.recordings.some((r) => r.from < to && r.to > from)) return 'it overlapped a recording made in Workbench';
+    }
+    const recent = this.messages.filter((m) => m.from === 'haven' && Date.now() / 1000 - m.t < ECHO_WINDOW_MS / 1000);
+    if (words(e.text ?? '').length >= ECHO_MIN_WORDS && recent.some((m) => echoShare(e.text!, m.text) >= ECHO_SHARE)) {
+      return "it was Haven's own reply, heard back through the mic";
+    }
+    return null;
+  }
+
+  // Voice recordings in Workbench (dictation into a pane, Haven's mic button). Called on
+  // every audio chunk, so only a change reaches the listener.
+  recording(active: boolean): void {
+    const now = Date.now();
+    if (this.recordingQuiet) clearTimeout(this.recordingQuiet);
+    this.recordingQuiet = null;
+    if (active) {
+      this.recordingQuiet = setTimeout(() => this.recording(false), RECORDING_QUIET_MS);
+      if (this.recordingSince !== null) return;
+      this.recordingSince = now;
+      return this.tellEars({ dictating: true });
+    }
+    if (this.recordingSince === null) return;
+    this.recordings = [...this.recordings.filter((r) => now - r.to < RECORDINGS_KEPT_MS), { from: this.recordingSince, to: now }];
+    this.recordingSince = null;
+    this.tellEars({ dictating: false });
+  }
+
   // Clients report playback so the mic can ignore it on speakers, and so the time
-  // to answer without saying "Haven" starts when a reply ends.
-  setPlaying(playing: boolean): void {
-    this.ears?.stdin.write(`${JSON.stringify({ playing, open: !playing })}\n`);
+  // to answer without saying "Haven" starts when a reply ends. Each client counts on its
+  // own: one that finishes first mustn't reopen the mic while another still plays.
+  setPlaying(client: Client, playing: boolean): void {
+    const was = this.players.size > 0;
+    if (playing) this.players.add(client);
+    else this.players.delete(client);
+    const now = this.players.size > 0;
+    if (now !== was) this.tellEars({ playing: now, open: !now });
+  }
+
+  dropClient(client: Client): void {
+    if (this.players.has(client)) this.setPlaying(client, false);
   }
 }

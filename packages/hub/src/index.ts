@@ -126,8 +126,12 @@ async function main(): Promise<void> {
   }
   const harnesses = new Harnesses(db, terms, claude);
   harnessesRef = harnesses;
-  const voice = new Voice(db, (u) => server?.broadcast({ event: 'voice.update', data: u }));
   const haven = new Haven((event, data) => server?.broadcast({ event, data } as Push));
+  const voice = new Voice(
+    db,
+    (u) => server?.broadcast({ event: 'voice.update', data: u }),
+    (active) => haven.recording(active),
+  );
   const jobmail = new JobMailWatch(db, (mail, alert) => server?.broadcast({ event: 'jobmail.update', data: { mail, alert } }));
   const hubOps: HubOps = {};
   const users = new Users(db);
@@ -216,7 +220,10 @@ async function main(): Promise<void> {
   server = await startServer(
     dispatch,
     token,
-    (client) => terms.dropClient(client),
+    (client) => {
+      terms.dropClient(client);
+      haven.dropClient(client);
+    },
     (path, headers, body) => claude.hook(path, headers['x-workbench-hook'] as string | undefined, body),
     { owner: users.owner, byKey: (key) => users.byKey(key), visible: access.visible },
   );

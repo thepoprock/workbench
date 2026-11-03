@@ -313,6 +313,9 @@ export class Voice {
   constructor(
     private db: DB,
     private send: (u: VoiceUpdate) => void,
+    // A recording is taking audio (true, on every chunk) or has stopped (false). Haven's
+    // hands-free listener hears the same room, so it stays deaf while this is true.
+    private onRecording: (active: boolean) => void = () => {},
   ) {
     this.engine = new Engine(db);
   }
@@ -355,11 +358,13 @@ export class Voice {
     rec.chunks.push(buf);
     rec.bytes += buf.length;
     rec.u.seconds = rec.bytes / BPS / RATE;
+    this.onRecording(true);
     this.maybePass(rec);
   }
 
   stop(id: string): Promise<VoiceUpdate> {
     const rec = this.rec(id);
+    this.onRecording(false);
     rec.finishing ??= this.finish(rec);
     return rec.finishing;
   }
@@ -367,6 +372,7 @@ export class Voice {
   discard(id: string): void {
     const rec = this.recs.get(id);
     if (!rec) return;
+    this.onRecording(false);
     rec.finishing ??= Promise.resolve(rec.u); // stops further passes
     if (rec.timer) clearTimeout(rec.timer);
     if (rec.u.file) removeRecording(rec.u.file.replace(/\.wav$/, ''));

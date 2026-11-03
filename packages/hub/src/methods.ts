@@ -546,8 +546,8 @@ export function makeDispatch(
       haven.setListening(on);
       return null;
     },
-    'haven.playing': ({ playing }) => {
-      haven.setPlaying(playing);
+    'haven.playing': ({ playing }, client) => {
+      haven.setPlaying(client, playing);
       return null;
     },
     'voice.engine': () => voice.engineStatus(),
