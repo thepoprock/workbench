@@ -17,7 +17,7 @@ interface View extends HavenState {
   playing: number | null; // the message now playing
   unread: boolean;
   notice: string | null;
-  autoPlay: boolean; // phones only; a Mac goes by its headphones
+  autoPlay: boolean; // whether to play new replies without clicking
 }
 
 const AUTO_PLAY_KEY = 'haven.autoPlay';
@@ -120,7 +120,7 @@ function onAudio(a: HavenAudio): void {
     set({ notice: "That voice message couldn't be made." });
     return void pump();
   }
-  const wanted = a.auto && (PHONE ? view.autoPlay : a.headphones);
+  const wanted = a.auto && view.autoPlay;
   if (!entry && wanted) queue.push((entry = { t: a.t, ready: 0, done: false, next: 0 }));
   if (!entry) return;
   entry.ready = Math.max(entry.ready, a.part + 1);

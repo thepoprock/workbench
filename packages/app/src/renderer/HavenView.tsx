@@ -97,20 +97,16 @@ export function HavenView({ onError }: { onError: (message: string) => void }) {
         <span className="titlebar-name">Haven</span>
         <span className={`haven-status ${haven.online ? '' : 'off'}`}>{status}</span>
         <span className="haven-controls">
-          {onPhone ? (
-            <label title="Play new replies by themselves. Turn this on when your AirPods are in.">
-              <input type="checkbox" checked={haven.autoPlay} onChange={(e) => setAutoPlay(e.target.checked)} /> Auto-play
-            </label>
-          ) : (
-            <label title="Talk without pressing anything. Say “Haven” to start; replies then need no name for two minutes.">
-              <input
-                type="checkbox"
-                checked={haven.listening}
-                onChange={(e) => void hub.call('haven.listen', { on: e.target.checked }).catch((err) => onError((err as Error).message))}
-              />{' '}
-              Listen
-            </label>
-          )}
+          <label title="Talk without pressing anything. Say &quot;Haven&quot; to start; replies then need no name for two minutes.">
+            <input
+              type="checkbox"
+              checked={haven.listening}
+              onChange={(e) => void hub.call('haven.listen', { on: e.target.checked }).catch((err) => onError((err as Error).message))}
+            /> Listen
+          </label>
+          <label title="Play new replies by themselves.">
+            <input type="checkbox" checked={haven.autoPlay} onChange={(e) => setAutoPlay(e.target.checked)} /> Auto-play
+          </label>
         </span>
       </div>
       <div className="haven-messages">
