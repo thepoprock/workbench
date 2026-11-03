@@ -224,7 +224,8 @@ export class Haven {
     try {
       r = await fetch(`${this.cfg.url}/api/send`, {
         method: 'POST',
-        body: JSON.stringify({ text }),
+        // Old runtime reads text; Haven's 11-03 rewrite reads content. Send both.
+        body: JSON.stringify({ text, content: text }),
         signal: AbortSignal.timeout(REQUEST_MS),
       });
     } catch (err) {
