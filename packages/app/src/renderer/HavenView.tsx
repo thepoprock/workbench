@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState, type FormEvent } from 'react';
-import type { HavenMessage } from '@workbench/shared';
+import type { HavenMessage, Journal } from '@workbench/shared';
+import { JournalView } from './JournalPane.tsx';
 import { hub } from './hub.ts';
 import { clearNotice, holdPlayback, onPhone, play, setAutoPlay, stopPlaying, useHaven, loadOlder } from './haven.ts';
 import { micError, Recorder } from './voice.ts';
@@ -58,6 +59,8 @@ export function HavenView({ onError }: { onError: (message: string) => void }) {
   const [recording, setRecording] = useState(false);
   const [hearing, setHearing] = useState(false);
   const [resuming, setResuming] = useState(false);
+  const [tab, setTab] = useState<'chat' | 'journal'>('chat');
+  const [journal, setJournal] = useState<Journal | null>(null);
   const [level, setLevel] = useState(0);
   const [since, setSince] = useState(0);
   const [, tick] = useState(0);
@@ -68,6 +71,9 @@ export function HavenView({ onError }: { onError: (message: string) => void }) {
   useEffect(() => {
     end.current?.scrollIntoView();
   }, [haven.messages.length, haven.held.length]);
+  useEffect(() => {
+    hub.call('haven.journal', {}).then(setJournal, () => {});
+  }, []);
   useEffect(() => {
     const r = recorder.current;
     r.onLevel = setLevel;
@@ -104,14 +110,15 @@ export function HavenView({ onError }: { onError: (message: string) => void }) {
     try {
       if (!recording) {
         holdPlayback(true);
-        await r.start();
+        // Kept in Haven's journal too: the audio and what it heard, as well as the message.
+        await r.start(null, null, journal ?? undefined);
         setSince(Date.now());
         return setRecording(true);
       }
       setRecording(false);
       setHearing(true);
       const { id, text } = await r.stop();
-      void hub.call('voice.discard', { id }).catch(() => {});
+      if (!journal) void hub.call('voice.discard', { id }).catch(() => {}); // no journal to keep it in
       await send(text);
       holdPlayback(false); // sent: whatever waited plays now
     } catch (err) {
@@ -143,6 +150,14 @@ export function HavenView({ onError }: { onError: (message: string) => void }) {
     <div className="haven-view">
       <div className="titlebar drag haven-bar">
         <span className="titlebar-name">Haven</span>
+        <span className="haven-tabs">
+          <button className={tab === 'chat' ? 'on' : ''} onClick={() => setTab('chat')}>
+            Chat
+          </button>
+          <button className={tab === 'journal' ? 'on' : ''} onClick={() => setTab('journal')} disabled={!journal}>
+            Journal
+          </button>
+        </span>
         <span className={`haven-status ${!haven.online ? 'off' : haven.paused ? 'paused' : ''}`}>{status}</span>
         {haven.online && haven.paused && (
           <button
@@ -170,6 +185,12 @@ export function HavenView({ onError }: { onError: (message: string) => void }) {
           </label>
         </span>
       </div>
+      {tab === 'journal' && journal ? (
+        <div className="haven-journal">
+          <JournalView journal={journal} isActive={() => true} />
+        </div>
+      ) : (
+      <>
       <div
         className="haven-messages"
         ref={list}
@@ -245,6 +266,8 @@ export function HavenView({ onError }: { onError: (message: string) => void }) {
           Send
         </button>
       </form>
+      </>
+      )}
     </div>
   );
 }

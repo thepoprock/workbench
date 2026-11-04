@@ -569,7 +569,8 @@ export interface Methods {
   'haven.state': { params: Empty; result: HavenState };
   'haven.history': { params: { before: number; limit?: number }; result: { messages: HavenMessage[]; more: boolean } }; // scrolling back
   'haven.send': { params: { text: string }; result: null };
-  'haven.resume': { params: Empty; result: null }; // unpause Haven's runtime; held messages then go
+  'haven.resume': { params: Empty; result: null };
+  'haven.journal': { params: Empty; result: Journal }; // Haven's own journal (not a project's) // unpause Haven's runtime; held messages then go
   'haven.speak': { params: { t: number }; result: { ready: number; done: boolean } };
   'haven.audio': { params: { t: number; part: number }; result: string }; // the .wav, base64
   'haven.listen': { params: { on: boolean }; result: null };

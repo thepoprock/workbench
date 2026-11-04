@@ -15,7 +15,30 @@ const mmss = (s: number) => `${Math.floor(s / 60)}:${String(Math.floor(s % 60)).
 // this tab's alone. Nothing is typed into a terminal, and stopping or closing the
 // tab always keeps what was said; an entry is removed only by deleting it.
 export function JournalPane({ params, api, containerApi }: IDockviewPanelProps<JournalParams>) {
-  const ref: JournalRef = { projectId: params.projectId, journalId: params.journalId };
+  return (
+    <JournalView
+      journal={params}
+      isActive={() => api.isActive}
+      onTitle={(t) => api.setTitle(t)}
+      onNew={async () => openJournal(containerApi, await hub.call('journal.create', { projectId: params.projectId }))}
+    />
+  );
+}
+
+// The journal itself, for a tab of its own or inside Haven's panel. Without onNew there
+// is no "+ New journal" (Haven has one journal).
+export function JournalView({
+  journal,
+  isActive,
+  onTitle = () => {},
+  onNew,
+}: {
+  journal: JournalRef;
+  isActive: () => boolean;
+  onTitle?: (title: string) => void;
+  onNew?: () => Promise<void>;
+}) {
+  const ref: JournalRef = { projectId: journal.projectId, journalId: journal.journalId };
   const [name, setName] = useState('');
   const [entries, setEntries] = useState<VoiceRecording[] | null>(null);
   const [filter, setFilter] = useState('');
@@ -34,13 +57,13 @@ export function JournalPane({ params, api, containerApi }: IDockviewPanelProps<J
       const j = journals.find((x) => x.journalId === ref.journalId);
       if (j) {
         setName(j.name);
-        api.setTitle(j.name);
+        onTitle(j.name);
       }
       setEntries(list);
     } catch (err) {
       setError((err as Error).message);
     }
-  }, [ref.projectId, ref.journalId, api]);
+  }, [ref.projectId, ref.journalId]); // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => void load(), [load]);
 
@@ -87,17 +110,17 @@ export function JournalPane({ params, api, containerApi }: IDockviewPanelProps<J
   // ⌘⇧V (App) starts and stops an entry when this tab is the active one.
   useEffect(() => {
     const press = () => {
-      if (api.isActive) void toggle();
+      if (isActive()) void toggle();
     };
     window.addEventListener('workbench:voice', press);
     return () => window.removeEventListener('workbench:voice', press);
-  }, [api, toggle]);
+  }, [isActive, toggle]);
 
   const rename = async () => {
     if (!name.trim()) return load();
     try {
       const j = await hub.call('journal.rename', { ...ref, name });
-      api.setTitle(j.name);
+      onTitle(j.name);
     } catch (err) {
       setError((err as Error).message);
     }
@@ -105,7 +128,7 @@ export function JournalPane({ params, api, containerApi }: IDockviewPanelProps<J
 
   const newJournal = async () => {
     try {
-      openJournal(containerApi, await hub.call('journal.create', { projectId: ref.projectId }));
+      await onNew?.();
     } catch (err) {
       setError((err as Error).message);
     }
@@ -131,9 +154,11 @@ export function JournalPane({ params, api, containerApi }: IDockviewPanelProps<J
         {u && <span className="voice-time">{mmss(u.seconds)}</span>}
         <input className="note-input" placeholder="Search this journal…" value={filter} onChange={(e) => setFilter(e.target.value)} />
         <span className="muted small">{entries ? `${shown.length} entr${shown.length === 1 ? 'y' : 'ies'}` : ''}</span>
-        <button className="link" onClick={() => void newJournal()} title="A separate journal in its own tab">
-          + New journal
-        </button>
+        {onNew && (
+          <button className="link" onClick={() => void newJournal()} title="A separate journal in its own tab">
+            + New journal
+          </button>
+        )}
       </div>
       {u && (u.text || u.partial) && (
         <div className="journal-live">

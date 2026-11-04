@@ -55,3 +55,10 @@ export function renameJournal(ref: JournalRef, name: string): Journal {
   if (!name.trim()) throw new Error('a journal needs a name');
   return write({ ...read(ref), name: name.trim() });
 }
+
+// Haven's journal. Haven isn't a project, so theirs lives under the name "haven":
+// <data>/journals/haven/<journalId>/. Made the first time it's asked for.
+export const HAVEN_JOURNALS = 'haven';
+export function havenJournal(): Journal {
+  return listJournals(HAVEN_JOURNALS)[0] ?? createJournal(HAVEN_JOURNALS, 'Haven');
+}

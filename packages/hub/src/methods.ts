@@ -22,7 +22,7 @@ import type { Harnesses } from './harnesses.ts';
 import type { Terminals } from './terminals.ts';
 import { codexHistory } from './codexhistory.ts';
 import type { JobMailWatch } from './jobmail.ts';
-import { createJournal, listJournals, renameJournal } from './journal.ts';
+import { createJournal, havenJournal, listJournals, renameJournal } from './journal.ts';
 import { deleteRecording, fileRecording, listJournalEntries, listRecordings, readRecordingAudio, saveRecordingText, type Voice } from './voice.ts';
 
 type Handler<M extends Method> = (params: Methods[M]['params'], client: Client) => unknown;
@@ -564,6 +564,7 @@ export function makeDispatch(
     'journal.create': ({ projectId, name }) => createJournal(projectId, name),
     'journal.rename': ({ name, ...ref }) => renameJournal(ref, name),
     'journal.entries': (ref) => listJournalEntries(ref),
+    'haven.journal': () => havenJournal(),
     'voice.file': ({ id, projectId }) => {
       if (projectId) getProject(projectId);
       fileRecording(id, projectId);

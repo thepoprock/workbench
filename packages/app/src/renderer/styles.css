@@ -572,6 +572,13 @@ kbd { font: inherit; font-size: 11px; color: var(--muted); }
 .haven-status { color: var(--ok); font-size: 12px; }
 .haven-status.off { color: var(--bad); }
 .haven-status.paused { color: var(--warn); }
+.haven-tabs { display: flex; gap: 2px; -webkit-app-region: no-drag; }
+.haven-tabs button { padding: 3px 12px; background: none; border: 1px solid var(--border); color: var(--muted); font: inherit; font-size: 12px; cursor: pointer; }
+.haven-tabs button:first-child { border-radius: 12px 0 0 12px; }
+.haven-tabs button:last-child { border-radius: 0 12px 12px 0; }
+.haven-tabs button.on { background: var(--accent-bg); color: var(--text); border-color: var(--accent); }
+.haven-journal { flex: 1; min-height: 0; display: flex; flex-direction: column; overflow: hidden; }
+.haven-journal > * { flex: 1; min-height: 0; }
 .haven-resume {
   padding: 3px 12px; background: none; border: 1px solid var(--warn); border-radius: 12px;
   color: var(--warn); font: inherit; font-size: 12px; cursor: pointer; -webkit-app-region: no-drag;
