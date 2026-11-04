@@ -67,6 +67,10 @@ const queue: Queued[] = [];
 let loading = false;
 let shownOpen = false;
 let lastSpoken: number | null = null;
+// While you're recording a message nothing plays: a reply that arrives waits, and one
+// already playing pauses where it is. Both go on once your message has been sent.
+let holding = false;
+let suspended = false; // paused mid-sentence by a recording, to carry on from there
 
 const b64Bytes = (b64: string) => Uint8Array.from(atob(b64), (c) => c.charCodeAt(0));
 
@@ -76,7 +80,7 @@ function finished() {
 }
 
 async function pump(): Promise<void> {
-  if (loading || !element.paused) return;
+  if (holding || suspended || loading || !element.paused) return;
   const now = queue[0];
   if (!now) return finished();
   if (now.next >= now.ready) {
@@ -106,7 +110,24 @@ async function pump(): Promise<void> {
 
 element.onended = () => void pump();
 
+export function holdPlayback(on: boolean): void {
+  if (on === holding) return;
+  holding = on;
+  if (on) {
+    if (!element.paused) {
+      element.pause();
+      suspended = true;
+    }
+    return;
+  }
+  if (suspended) {
+    suspended = false;
+    void element.play().catch(() => void pump());
+  } else void pump();
+}
+
 export function stopPlaying(): void {
+  suspended = false;
   queue.length = 0;
   element.pause();
   finished();

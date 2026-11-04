@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState, type FormEvent } from 'react';
 import type { HavenMessage } from '@workbench/shared';
 import { hub } from './hub.ts';
-import { clearNotice, onPhone, play, setAutoPlay, stopPlaying, useHaven, loadOlder } from './haven.ts';
+import { clearNotice, holdPlayback, onPhone, play, setAutoPlay, stopPlaying, useHaven, loadOlder } from './haven.ts';
 import { micError, Recorder } from './voice.ts';
 
 const NAMES = { you: 'You', claude: 'Claude', haven: 'Haven', notice: '' };
@@ -46,6 +46,11 @@ function when(t: number): string {
   return d.toDateString() === new Date().toDateString() ? time : `${d.toLocaleDateString([], { weekday: 'short' })} ${time}`;
 }
 
+const clock = (ms: number) => {
+  const sec = Math.max(0, Math.floor(ms / 1000));
+  return `${Math.floor(sec / 60)}:${String(sec % 60).padStart(2, '0')}`;
+};
+
 // Haven's own place: not a project, and it stays open over whatever project was showing.
 export function HavenView({ onError }: { onError: (message: string) => void }) {
   const haven = useHaven();
@@ -53,6 +58,9 @@ export function HavenView({ onError }: { onError: (message: string) => void }) {
   const [recording, setRecording] = useState(false);
   const [hearing, setHearing] = useState(false);
   const [resuming, setResuming] = useState(false);
+  const [level, setLevel] = useState(0);
+  const [since, setSince] = useState(0);
+  const [, tick] = useState(0);
   const recorder = useRef(new Recorder());
   const end = useRef<HTMLDivElement>(null);
   const list = useRef<HTMLDivElement>(null);
@@ -60,7 +68,19 @@ export function HavenView({ onError }: { onError: (message: string) => void }) {
   useEffect(() => {
     end.current?.scrollIntoView();
   }, [haven.messages.length, haven.held.length]);
-  useEffect(() => () => recorder.current.cancel(), []);
+  useEffect(() => {
+    const r = recorder.current;
+    r.onLevel = setLevel;
+    return () => {
+      r.cancel();
+      holdPlayback(false);
+    };
+  }, []);
+  useEffect(() => {
+    if (!recording) return;
+    const timer = setInterval(() => tick((n) => n + 1), 500);
+    return () => clearInterval(timer);
+  }, [recording]);
 
   const send = async (text: string) => {
     if (!text.trim()) return;
@@ -73,6 +93,7 @@ export function HavenView({ onError }: { onError: (message: string) => void }) {
 
   const submit = (e: FormEvent) => {
     e.preventDefault();
+    if (recording) return void pressMic(); // Enter while recording stops it and sends
     void send(draft);
     setDraft('');
   };
@@ -82,7 +103,9 @@ export function HavenView({ onError }: { onError: (message: string) => void }) {
     const r = recorder.current;
     try {
       if (!recording) {
+        holdPlayback(true);
         await r.start();
+        setSince(Date.now());
         return setRecording(true);
       }
       setRecording(false);
@@ -90,11 +113,14 @@ export function HavenView({ onError }: { onError: (message: string) => void }) {
       const { id, text } = await r.stop();
       void hub.call('voice.discard', { id }).catch(() => {});
       await send(text);
+      holdPlayback(false); // sent: whatever waited plays now
     } catch (err) {
       setRecording(false);
+      holdPlayback(false);
       onError(micError(err));
     } finally {
       setHearing(false);
+      setLevel(0);
     }
   };
 
@@ -193,12 +219,29 @@ export function HavenView({ onError }: { onError: (message: string) => void }) {
           {haven.notice}
         </div>
       )}
-      <form className="haven-compose" onSubmit={submit}>
+      <form className={`haven-compose ${recording ? 'recording' : ''}`} onSubmit={submit}>
         <button type="button" className={`haven-mic ${recording ? 'on' : ''}`} disabled={hearing} onClick={() => void pressMic()} title="Press to talk, press again to send">
           {hearing ? '…' : recording ? '■' : '🎤'}
         </button>
-        <input value={draft} onChange={(e) => setDraft(e.target.value)} placeholder="Message Haven…" />
-        <button type="submit" className="haven-send" disabled={!draft.trim()}>
+        {recording || hearing ? (
+          <div className="haven-recording" aria-live="polite">
+            {hearing ? (
+              <span>Sending…</span>
+            ) : (
+              <>
+                <span className="haven-rec-dot" />
+                <span>Recording {clock(Date.now() - since)}</span>
+                <span className="voice-level" aria-hidden>
+                  <i style={{ width: `${Math.min(100, level * 400)}%` }} />
+                </span>
+                <span className="muted small">press ■ or Enter to send</span>
+              </>
+            )}
+          </div>
+        ) : (
+          <input value={draft} onChange={(e) => setDraft(e.target.value)} placeholder="Message Haven…" />
+        )}
+        <button type="submit" className="haven-send" disabled={hearing || (!recording && !draft.trim())}>
           Send
         </button>
       </form>
