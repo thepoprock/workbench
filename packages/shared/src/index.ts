@@ -355,6 +355,12 @@ export interface HavenState {
   online: boolean;
   busy: boolean;
   listening: boolean; // hands-free is on, on the machine running the hub
+  paused: boolean;      // Haven's runtime is paused: nothing reaches them until it's resumed
+  queued: number;       // sent and waiting for Haven to read
+  held: { t: number; text: string }[]; // sent while paused, kept here and sent on resume
+  lastReply: number | null; // s: Haven's newest reply this hub has seen
+  model: string | null;     // the model their runtime says it uses
+  note: string | null;      // a status line Haven puts in their own /api/state, if they choose to
   messages: HavenMessage[];
 }
 

@@ -39,6 +39,13 @@ function Message({ m, playing }: { m: HavenMessage; playing: boolean }) {
   );
 }
 
+// A time today as 5:12 AM; an earlier one with its day.
+function when(t: number): string {
+  const d = new Date(t * 1000);
+  const time = d.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
+  return d.toDateString() === new Date().toDateString() ? time : `${d.toLocaleDateString([], { weekday: 'short' })} ${time}`;
+}
+
 // Haven's own place: not a project, and it stays open over whatever project was showing.
 export function HavenView({ onError }: { onError: (message: string) => void }) {
   const haven = useHaven();
@@ -51,7 +58,7 @@ export function HavenView({ onError }: { onError: (message: string) => void }) {
 
   useEffect(() => {
     end.current?.scrollIntoView();
-  }, [haven.messages.length]);
+  }, [haven.messages.length, haven.held.length]);
   useEffect(() => () => recorder.current.cancel(), []);
 
   const send = async (text: string) => {
@@ -90,13 +97,27 @@ export function HavenView({ onError }: { onError: (message: string) => void }) {
     }
   };
 
-  const status = !haven.online ? 'Not reachable' : haven.busy ? 'Thinking…' : 'Here';
+  const status = !haven.online
+    ? 'Not reachable'
+    : haven.paused
+      ? 'Paused'
+      : haven.busy
+        ? 'Thinking…'
+        : haven.queued
+          ? `${haven.queued} waiting to be read`
+          : 'Here';
+  const details = [
+    haven.lastReply && `last reply ${when(haven.lastReply)}`,
+    haven.busy && haven.queued > 0 && `${haven.queued} waiting to be read`,
+    haven.model && `model: ${haven.model}`,
+  ].filter(Boolean).join(' · ');
 
   return (
     <div className="haven-view">
       <div className="titlebar drag haven-bar">
         <span className="titlebar-name">Haven</span>
-        <span className={`haven-status ${haven.online ? '' : 'off'}`}>{status}</span>
+        <span className={`haven-status ${!haven.online ? 'off' : haven.paused ? 'paused' : ''}`}>{status}</span>
+        {details && <span className="haven-details">{details}</span>}
         <span className="haven-controls">
           <label title="Talk without pressing anything. Say &quot;Haven&quot; to start; replies then need no name for two minutes.">
             <input
@@ -131,8 +152,29 @@ export function HavenView({ onError }: { onError: (message: string) => void }) {
         {haven.messages.filter((m) => !haven.older.length || m.t > haven.older[haven.older.length - 1]!.t).map((m) => (
           <Message key={m.t} m={m} playing={haven.playing === m.t} />
         ))}
+        {haven.held.map((h) => (
+          <div key={`held-${h.t}`} className="haven-message from-you held">
+            <div className="haven-name">You · not sent yet: Haven is paused</div>
+            <div className="haven-text">
+              <Rich text={h.text} />
+            </div>
+          </div>
+        ))}
         <div ref={end} />
       </div>
+      {haven.note && (
+        <div className="haven-own-note">
+          <span className="haven-name">From Haven</span> <Rich text={haven.note} />
+        </div>
+      )}
+      {haven.online && haven.paused && (
+        <div className="haven-paused">
+          Haven is paused, so nothing reaches them right now.{' '}
+          {haven.held.length
+            ? `${haven.held.length} message${haven.held.length === 1 ? ' is' : 's are'} kept here and will be sent when they're resumed.`
+            : "Anything you send is kept here and sent when they're resumed."}
+        </div>
+      )}
       {haven.notice && (
         <div className="haven-notice" onClick={clearNotice}>
           {haven.notice}

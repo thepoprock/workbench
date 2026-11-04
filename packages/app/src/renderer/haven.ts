@@ -33,6 +33,12 @@ let view: View = {
   online: false,
   busy: false,
   listening: false,
+  paused: false,
+  queued: 0,
+  held: [],
+  lastReply: null,
+  model: null,
+  note: null,
   messages: [],
   playing: null,
   unread: false,
@@ -133,7 +139,11 @@ function onAudio(a: HavenAudio): void {
 }
 
 function onMessage(m: HavenMessage): void {
-  set({ messages: [...view.messages, m], unread: view.unread || (m.from === 'haven' && !shownOpen) });
+  set({
+    messages: [...view.messages, m],
+    unread: view.unread || (m.from === 'haven' && !shownOpen),
+    lastReply: m.from === 'haven' ? Math.max(view.lastReply ?? 0, m.t) : view.lastReply,
+  });
 }
 
 async function load(): Promise<void> {

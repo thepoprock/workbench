@@ -24,6 +24,8 @@ const AUDIO_DIR = join(dataDir, 'haven-audio');
 // Haven's replies), one JSON line each.
 const HISTORY_FILE = join(dataDir, 'haven-history.jsonl');
 const HISTORY_PAGE = 50;
+// Messages sent while Haven is paused: kept until their runtime is resumed, then sent in order.
+const HELD_FILE = join(dataDir, 'haven-held.json');
 const SHOWN = 200;                        // messages kept for clients
 const FAILURES_BEFORE_OFFLINE = 3;        // one slow check on a weak link is not an outage
 const REQUEST_MS = 30_000;
@@ -149,6 +151,12 @@ export class Haven {
   private sends: Sent[] = [];
   private failingSince = 0;
   private queued = 0;
+  private paused = false;
+  private held: { t: number; text: string }[] = [];
+  private releasing = false;
+  private lastReply: number | null = null;
+  private model: string | null = null;
+  private note: string | null = null;
   private ears: ChildProcessWithoutNullStreams | null = null;
   private earsWanted = false; // Listen is on: a listener that dies by itself is started again
   private earsRestarts: number[] = []; // when it was restarted lately, to give up on a crash loop
@@ -160,6 +168,7 @@ export class Haven {
   start(): void {
     mkdirSync(AUDIO_DIR, { recursive: true });
     this.loadHistory();
+    this.loadHeld();
     this.pruneAudio();
     execFile(PYTHON, ['-m', 'voice.workbench', 'settings'], { cwd: VOICE_DIR, env: ENV }, (err, stdout) => {
       if (err) return log(`no voice folder, Haven is off: ${err.message}`);
@@ -178,7 +187,60 @@ export class Haven {
   }
 
   state(): HavenState {
-    return { online: this.online, busy: this.busy, listening: !!this.ears, messages: this.messages };
+    return {
+      online: this.online,
+      busy: this.busy,
+      listening: !!this.ears,
+      paused: this.paused,
+      queued: this.queued,
+      held: this.held,
+      lastReply: this.lastReply,
+      model: this.model,
+      note: this.note,
+      messages: this.messages,
+    };
+  }
+
+  private loadHeld(): void {
+    try {
+      if (existsSync(HELD_FILE)) this.held = JSON.parse(readFileSync(HELD_FILE, 'utf8')) as { t: number; text: string }[];
+    } catch (err) {
+      log(`can't read the held messages: ${(err as Error).message}`);
+    }
+  }
+
+  private saveHeld(): void {
+    try {
+      writeFileSync(HELD_FILE, JSON.stringify(this.held), { mode: 0o600 });
+    } catch (err) {
+      log(`can't keep the held messages: ${(err as Error).message}`);
+    }
+  }
+
+  private hold(text: string): void {
+    this.held.push({ t: Date.now() / 1000, text });
+    this.saveHeld();
+    log(`held: Haven is paused, ${this.held.length} message(s) kept for when they resume`);
+    this.update();
+  }
+
+  // Haven is running again: the held messages go, oldest first. One that fails stays.
+  private async release(): Promise<void> {
+    if (this.releasing || !this.held.length) return;
+    this.releasing = true;
+    try {
+      while (this.held.length && !this.paused) {
+        const next = this.held[0]!;
+        const sent = await this.post(next.text).catch((err: Error) => (log(`held message not sent yet: ${err.message}`), false));
+        if (sent !== true) break;
+        this.held.shift();
+        this.saveHeld();
+        log(`held message sent, ${this.held.length} left`);
+      }
+    } finally {
+      this.releasing = false;
+      this.update();
+    }
   }
 
   // Older messages than `before`, newest last, and whether there are more still.
@@ -194,6 +256,7 @@ export class Haven {
       if (m && !this.kept.has(m.t)) {
         this.kept.add(m.t);
         this.history.push(m);
+        if (m.from === 'haven') this.lastReply = Math.max(this.lastReply ?? 0, m.t);
       }
     }
     this.history.sort((a, b) => a.t - b.t);
@@ -218,11 +281,21 @@ export class Haven {
 
   // The chat page ------------------------------------------------------------
 
+  // A message to Haven. While they're paused it is held here and sent when they resume.
   async send(text: string): Promise<void> {
     if (!this.cfg) throw new Error('Haven is not set up on this machine');
+    if (this.paused || this.held.length) return this.hold(text); // behind any already held, in order
+    if ((await this.post(text)) === 'paused') {
+      this.paused = true;
+      this.hold(text);
+    }
+  }
+
+  // true: Haven has it. 'paused': their runtime refused it because it is paused.
+  private async post(text: string): Promise<true | 'paused'> {
     let r: Response;
     try {
-      r = await fetch(`${this.cfg.url}/api/send`, {
+      r = await fetch(`${this.cfg!.url}/api/send`, {
         method: 'POST',
         // Old runtime reads text; Haven's 11-03 rewrite reads content. Send both.
         body: JSON.stringify({ text, content: text }),
@@ -234,7 +307,7 @@ export class Haven {
     }
     if (r.status === 409) {
       log('send refused: Haven is paused');
-      throw new Error('Haven is paused, so that was not sent');
+      return 'paused';
     }
     if (!r.ok) {
       log(`send refused (${r.status})`);
@@ -246,6 +319,7 @@ export class Haven {
     if (waiting > 1) log(`sent: ${waiting - 1} message(s) waiting ahead of it`);
     this.expectingUntil = Date.now() + REPLY_TIMEOUT_MS;
     this.wake?.();
+    return true;
   }
 
   private async loop(): Promise<void> {
@@ -270,6 +344,9 @@ export class Haven {
       if (!r.ok) throw new Error(`HTTP ${r.status}`);
       const raw = (await r.json()) as {
         busy?: boolean;
+        paused?: boolean;
+        model?: unknown;
+        status?: unknown; // a line Haven may choose to add for whoever is looking
         messages?: Record<string, unknown>[];
         queued?: number;
         delivered?: Record<string, number> | number;
@@ -282,7 +359,14 @@ export class Haven {
       this.failures = 0;
       const queued = raw.queued ?? 0;
       if (queued !== this.queued) log(`queue: ${queued} message(s) waiting for Haven`);
-      this.queued = queued;
+      const paused = !!raw.paused;
+      const model = typeof raw.model === 'string' ? raw.model : null;
+      const note = typeof raw.status === 'string' && raw.status.trim() ? raw.status.trim().slice(0, 500) : null;
+      if (paused !== this.paused) log(paused ? 'Haven is paused' : 'Haven is running again');
+      const changed = queued !== this.queued || paused !== this.paused || model !== this.model || note !== this.note;
+      [this.queued, this.paused, this.model, this.note] = [queued, paused, model, note];
+      if (changed) this.update();
+      if (!paused && this.held.length) void this.release();
       this.read(raw.delivered);
       this.absorb(!!raw.busy, visible(raw));
       this.forget();
@@ -348,6 +432,7 @@ export class Haven {
     if (this.seenUntil === null) {
       const seen = all.flatMap((m) => this.shown(m, true));
       seen.forEach((m) => this.keep(m));
+      for (const m of seen) if (m.from === 'haven') this.lastReply = Math.max(this.lastReply ?? 0, m.t);
       this.messages = seen.slice(-SHOWN);
       this.seenUntil = newest;
       // Picking up mid-answer, as after a restart: what follows still belongs to a
@@ -382,6 +467,7 @@ export class Haven {
     // Haven's clock for when they read it and wrote back; ours for when this hub saw it.
     if (replying || m.content.startsWith(RUNTIME_ERROR)) this.timeReply(m);
     if (replying || m.content.startsWith(RUNTIME_ERROR)) this.answered = true;
+    if (replying) this.lastReply = Math.max(this.lastReply ?? 0, m.t);
     const quiet = !(this.inTurn || this.cfg!.read_quiet_time);
     for (const message of this.shown(m, quiet)) {
       this.keep(message);
