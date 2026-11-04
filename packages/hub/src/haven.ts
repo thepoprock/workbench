@@ -291,6 +291,20 @@ export class Haven {
     }
   }
 
+  // Unpause Haven's runtime, as `haven resume` on bm3 does. Only when someone asks.
+  async resume(): Promise<void> {
+    if (!this.cfg) throw new Error('Haven is not set up on this machine');
+    let r: Response;
+    try {
+      r = await fetch(`${this.cfg.url}/api/resume`, { method: 'POST', signal: AbortSignal.timeout(REQUEST_MS) });
+    } catch (err) {
+      throw new Error(`Couldn't reach Haven: ${(err as Error).message}`);
+    }
+    if (!r.ok) throw new Error(`Haven didn't resume (${r.status})`);
+    log('resumed from Workbench');
+    this.wake?.(); // the next check sees it running and sends anything held
+  }
+
   // true: Haven has it. 'paused': their runtime refused it because it is paused.
   private async post(text: string): Promise<true | 'paused'> {
     let r: Response;

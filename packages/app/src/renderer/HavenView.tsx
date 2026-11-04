@@ -52,6 +52,7 @@ export function HavenView({ onError }: { onError: (message: string) => void }) {
   const [draft, setDraft] = useState('');
   const [recording, setRecording] = useState(false);
   const [hearing, setHearing] = useState(false);
+  const [resuming, setResuming] = useState(false);
   const recorder = useRef(new Recorder());
   const end = useRef<HTMLDivElement>(null);
   const list = useRef<HTMLDivElement>(null);
@@ -117,6 +118,18 @@ export function HavenView({ onError }: { onError: (message: string) => void }) {
       <div className="titlebar drag haven-bar">
         <span className="titlebar-name">Haven</span>
         <span className={`haven-status ${!haven.online ? 'off' : haven.paused ? 'paused' : ''}`}>{status}</span>
+        {haven.online && haven.paused && (
+          <button
+            className="haven-resume"
+            disabled={resuming}
+            onClick={() => {
+              setResuming(true);
+              void hub.call('haven.resume', {}).catch((err) => onError((err as Error).message)).finally(() => setResuming(false));
+            }}
+          >
+            {resuming ? 'Resuming…' : 'Resume'}
+          </button>
+        )}
         {details && <span className="haven-details">{details}</span>}
         <span className="haven-controls">
           <label title="Talk without pressing anything. Say &quot;Haven&quot; to start; replies then need no name for two minutes.">

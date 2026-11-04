@@ -540,6 +540,10 @@ export function makeDispatch(
       await haven.send(text);
       return null;
     },
+    'haven.resume': async () => {
+      await haven.resume();
+      return null;
+    },
     'haven.speak': ({ t }) => haven.speak(t),
     'haven.audio': ({ t, part }) => haven.audio(t, part),
     'haven.listen': ({ on }) => {
